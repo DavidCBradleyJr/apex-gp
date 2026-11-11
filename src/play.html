@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apex GP — local harness</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { width: 100%; height: 100%; display: block; outline: none; }
+  pre { position: fixed; left: 8px; top: 8px; margin: 0; color: #fff; font: 12px/1.3 ui-monospace, monospace; text-shadow: 0 1px 2px #000; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<pre id="hud">click, then Enter to start · arrows/WASD · E/Q gears · C camera · X DRS · Space overtake · R recover · Esc pause</pre>
+<script src="../vendor/three.min.js"></script>
+<script src="../vendor/GLTFLoader.js"></script>
+<script src="../vendor/Sky.js"></script>
+<script src="../vendor/postfx.js"></script>
+<script src="../vendor/car.js"></script>
+<script src="game.js"></script>
+<script>
+  addEventListener('error', e => console.log('ERR', e.message, e.filename, e.lineno));
+  // Plain local harness for the engine; the real UI lives in the Claude Design canvas (design/project/Main.dc.html).
+  const q = new URLSearchParams(location.search), c = document.getElementById('c'), hud = document.getElementById('hud');
+  const game = ApexGP.create(c, { track: q.get('track'), onTelemetry: t => { if (q.has('log')) console.log('TEL', t.phase, t.speed, t.rpm, t.gear, t.mapX, t.mapZ); hud.textContent = `${t.phase}  ${t.speed} km/h  G${t.gear}  ${t.rpm} rpm  lap ${t.lap} ${t.lapTime}  best ${t.bestLap}  ${t.message}`; } });
+  // ?pose=steer → parked with wheels on lock (menu orbit); ?pose=brake → 300 km/h approaching T1 with the racing line
+  if (q.get('pose') === 'steer') { game.begin({}); Object.assign(game.state, { phase: 'paused', camMode: +(q.get('cam') || 2) }); game.sim.roadAngle = 0.3; }
+  if (q.get('pose') === 'orbit') game.sim.roadAngle = +(q.get('d') || 0.45);
+  if (q.get('pose') === 'brake') { game.begin({}); Object.assign(game.state, { phase: 'run', armed: false }); game.sim.placeAt(+(q.get("s") || 900), 1); game.sim.vx = 85 * Math.cos(game.sim.psi); game.sim.vz = 85 * Math.sin(game.sim.psi); game.sim.gear = 8; }
+  addEventListener('keydown', e => { if (e.code === 'Enter') game.begin({}); game.key(e.code, true); });
+  addEventListener('keyup', e => game.key(e.code, false));
+  if (q.has('drive')) { game.begin({}); setTimeout(() => game.key('ArrowUp', true), +(q.get('t') || 5500)); if (q.get('cam')) game.camera(+q.get('cam')); if (q.get('steer')) setTimeout(() => game.key('ArrowRight', true), +q.get('steer')); }
+</script>
+</body>
+</html>

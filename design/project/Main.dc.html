@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Apex GP</title>
+<script src="./support.js"></script>
+<script src="./vendor/three.min.js"></script>
+<script src="./vendor/GLTFLoader.js"></script>
+<script src="./vendor/Sky.js"></script>
+<script src="./vendor/postfx.js"></script>
+<script src="./vendor/car.js"></script>
+<script src="./game.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&amp;family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#07080a}
+a{color:#ff8a4c}a:hover{color:#ffb38a}
+.agp-num{font-family:'Barlow Condensed',system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.agp-btn:focus-visible,.agp-root:focus-visible{outline:2px solid #ff8a4c;outline-offset:2px}
+.agp-root:focus{outline:none}
+.agp-range{width:100%;accent-color:#ff6a1a;height:24px;margin:0}
+</style>
+</helmet>
+<div class="agp-root" tabIndex="0" ref="{{ setRoot }}" onKeyDown="{{ onKeyDown }}" onKeyUp="{{ onKeyUp }}" style="position: relative; width: 100%; height: 100vh; min-height: 560px; overflow: hidden; background: #07080a; color: #f3f4f6; font-family: Inter, system-ui, sans-serif; user-select: none">
+<canvas ref="{{ setCanvas }}" aria-label="3D driving view" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block; top: -5px"></canvas>
+
+<sc-if value="{{ isMenu }}" hint-placeholder-val="{{ true }}">
+<div style="position: absolute; inset: 0; display: flex; flex-wrap: wrap; align-items: stretch; justify-content: space-between; gap: 24px; padding: 32px; box-sizing: border-box; background: linear-gradient(90deg, rgba(7,8,10,0.92) 0%, rgba(7,8,10,0.70) 38%, rgba(7,8,10,0) 62%); overflow-y: auto">
+<div style="display: flex; flex-direction: column; gap: 12px; width: 420px; max-width: 100%">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div class="agp-num" style="font-size: 15px; letter-spacing: 0.32em; color: {{ accent }}; font-weight: 700">{{ modeLine }}</div>
+<h1 class="agp-num" style="margin: 0; font-size: 72px; line-height: 0.9; font-weight: 800; letter-spacing: -0.01em; font-style: italic">APEX GP</h1>
+<div style="font-size: 15px; color: #c3c9d1">{{ trackLine }}</div>
+</div>
+
+<button class="agp-btn" type="button" onClick="{{ start }}" style="min-height: 52px; border: 0; border-radius: 12px; background: {{ accent }}; color: #120800; font: 800 22px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">GO TO GRID ›</button>
+<div style="font-size: 12px; color: #9aa3ad">{{ status }}</div>
+<div style="display: flex; flex-direction: column; gap: 10px; padding: 16px; background: rgba(16,18,23,0.86); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px">
+<div class="agp-num" style="font-size: 14px; letter-spacing: 0.24em; color: #9aa3ad; font-weight: 700">SESSION</div>
+<div style="display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8px">
+<sc-for list="{{ sessionOpts }}" as="g" hint-placeholder-count="2">
+<button class="agp-btn" type="button" onClick="{{ g.flip }}" style="min-height: 44px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.03); color: #f3f4f6; font: 500 13px Inter, sans-serif; cursor: pointer"><span>{{ g.label }}</span><span class="agp-num" style="font-size: 14px; font-weight: 700; color: {{ accent }}">{{ g.state }}</span></button>
+</sc-for>
+</div>
+<div style="font-size: 12px; color: #9aa3ad">{{ trackNote }}</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{ modes }}" as="m" hint-placeholder-count="2">
+<button class="agp-btn" type="button" aria-pressed="{{ m.pressed }}" onClick="{{ m.pick }}" style="min-height: 44px; border-radius: 10px; border: 1px solid {{ m.border }}; background: {{ m.bg }}; color: #f3f4f6; font: 700 17px 'Barlow Condensed', sans-serif; letter-spacing: 0.12em; cursor: pointer">{{ m.label }}</button>
+</sc-for>
+</div>
+<sc-if value="{{ isRaceSetup }}" hint-placeholder-val="{{ false }}">
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{ raceOpts }}" as="g" hint-placeholder-count="2">
+<button class="agp-btn" type="button" onClick="{{ g.flip }}" style="min-height: 44px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.03); color: #f3f4f6; font: 500 13px Inter, sans-serif; cursor: pointer"><span>{{ g.label }}</span><span class="agp-num" style="font-size: 14px; font-weight: 700; color: {{ accent }}">{{ g.state }}</span></button>
+</sc-for>
+</div>
+<div style="font-size: 12px; color: #9aa3ad">Five AI cars; you start sixth. Tuck in behind a car for a slipstream.</div>
+</sc-if>
+<div class="agp-num" style="font-size: 14px; letter-spacing: 0.24em; color: #9aa3ad; font-weight: 700">CAR SETUP</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 13px; color: #c3c9d1">Tyre compound</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{ compounds }}" as="c" hint-placeholder-count="3">
+<button class="agp-btn" type="button" aria-pressed="{{ c.pressed }}" onClick="{{ c.pick }}" style="min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 10px; border: 1px solid {{ c.border }}; background: {{ c.bg }}; color: #f3f4f6; font: 600 14px Inter, sans-serif; cursor: pointer">
+<span aria-hidden="true" style="width: 14px; height: 14px; border-radius: 50%; border: 3px solid {{ c.ring }}; box-sizing: border-box"></span>{{ c.label }}</button>
+</sc-for>
+</div>
+<div style="font-size: 12px; color: #9aa3ad">{{ compoundNote }}</div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+<label style="display: flex; flex-direction: column; gap: 0; font-size: 12px; color: #c3c9d1">
+<span style="display: flex; justify-content: space-between; align-items: baseline"><span>Front wing</span><span class="agp-num" style="font-size: 16px; color: #f3f4f6">{{ setup.frontWing }}</span></span>
+<input class="agp-range" type="range" min="0" max="10" step="1" value="{{ setup.frontWing }}" onChange="{{ onFrontWing }}">
+</label>
+<label style="display: flex; flex-direction: column; gap: 0; font-size: 12px; color: #c3c9d1">
+<span style="display: flex; justify-content: space-between; align-items: baseline"><span>Rear wing</span><span class="agp-num" style="font-size: 16px; color: #f3f4f6">{{ setup.rearWing }}</span></span>
+<input class="agp-range" type="range" min="0" max="10" step="1" value="{{ setup.rearWing }}" onChange="{{ onRearWing }}">
+</label>
+<label style="display: flex; flex-direction: column; gap: 0; font-size: 12px; color: #c3c9d1">
+<span style="display: flex; justify-content: space-between; align-items: baseline"><span>Brake bias</span><span class="agp-num" style="font-size: 16px; color: #f3f4f6">{{ setup.brakeBias }}%</span></span>
+<input class="agp-range" type="range" min="50" max="64" step="0.5" value="{{ setup.brakeBias }}" onChange="{{ onBias }}">
+</label>
+</div>
+<div style="font-size: 12px; color: #9aa3ad">{{ aeroNote }}</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{ toggles }}" as="g" hint-placeholder-count="6">
+<button class="agp-btn" type="button" aria-pressed="{{ g.pressed }}" onClick="{{ g.flip }}" style="min-height: 46px; padding: 4px 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 10px; border: 1px solid {{ g.border }}; background: {{ g.bg }}; color: #f3f4f6; font: 500 13px Inter, sans-serif; cursor: pointer"><span>{{ g.label }}</span><span class="agp-num" style="font-size: 14px; font-weight: 700; color: {{ g.stateColor }}">{{ g.state }}</span></button>
+</sc-for>
+</div>
+</div>
+
+</div>
+
+<div style="display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; width: 300px; max-width: 100%">
+<sc-if value="{{ hasSession }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 16px; background: rgba(16,18,23,0.86); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px">
+<div class="agp-num" style="font-size: 14px; letter-spacing: 0.24em; color: #9aa3ad; font-weight: 700">BEST LAP <span style="color: #c58bff">{{ t.bestLap }}</span></div>
+<sc-for list="{{ laps }}" as="l" hint-placeholder-count="3">
+<div class="agp-num" style="display: flex; justify-content: space-between; font-size: 18px"><span style="color: #9aa3ad">LAP {{ l.lap }}</span><span style="color: {{ l.color }}">{{ l.time }}</span></div>
+</sc-for>
+<sc-if value="{{ hasLaps }}" hint-placeholder-val="{{ false }}">
+<button class="agp-btn" type="button" onClick="{{ openTel }}" style="min-height: 44px; margin-top: 6px; border-radius: 10px; border: 1px solid {{ accent }}; background: transparent; color: #f3f4f6; font: 700 16px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">LAP TELEMETRY</button>
+</sc-if>
+<button class="agp-btn" type="button" onClick="{{ clearBest }}" style="min-height: 32px; border: 0; background: transparent; color: #9aa3ad; font: 500 12px Inter, sans-serif; text-decoration: underline; cursor: pointer">Clear saved best lap and ghost</button>
+</div>
+</sc-if>
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 16px; background: rgba(16,18,23,0.86); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; font-size: 13px; color: #c3c9d1">
+<div class="agp-num" style="font-size: 14px; letter-spacing: 0.24em; color: #9aa3ad; font-weight: 700">CONTROLS</div>
+<sc-for list="{{ controls }}" as="k" hint-placeholder-count="8">
+<div style="display: flex; justify-content: space-between; gap: 12px"><span>{{ k.what }}</span><span class="agp-num" style="font-size: 15px; color: #f3f4f6">{{ k.key }}</span></div>
+</sc-for>
+<div style="font-size: 12px; color: #9aa3ad">Gamepad: left stick steer, RT/LT throttle/brake, RB/LB gears, Y camera, X DRS, B overtake.</div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isDriving }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 20px; top: 20px; display: flex; flex-direction: column; gap: 6px; width: 250px; padding: 14px 16px; background: rgba(10,12,16,0.78); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08)">
+<div class="agp-num" style="display: flex; justify-content: space-between; align-items: baseline; font-size: 16px; color: #9aa3ad; font-weight: 700; letter-spacing: 0.14em"><span>{{ lapLabel }}</span><span style="color: {{ invalidColor }}">{{ invalidLabel }}</span></div>
+<div class="agp-num" style="font-size: 44px; line-height: 1; font-weight: 700">{{ t.lapTime }}</div>
+<div class="agp-num" style="font-size: 26px; line-height: 1; font-weight: 700; color: {{ deltaColor }}">{{ deltaText }}</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-top: 4px">
+<sc-for list="{{ sectors }}" as="s" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 2px"><div style="height: 5px; border-radius: 3px; background: {{ s.color }}"></div><div class="agp-num" style="font-size: 14px; color: #c3c9d1">{{ s.label }}</div></div>
+</sc-for>
+</div>
+<div class="agp-num" style="display: flex; justify-content: space-between; font-size: 17px; color: #c3c9d1; margin-top: 4px"><span>LAST</span><span style="color: {{ lastColor }}">{{ t.lastLap }}</span></div>
+<div class="agp-num" style="display: flex; justify-content: space-between; font-size: 17px; color: #c3c9d1"><span>BEST</span><span style="color: #c58bff">{{ t.bestLap }}</span></div>
+<sc-if value="{{ isRace }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.12)">
+<sc-for list="{{ tower }}" as="c" hint-placeholder-count="6">
+<div class="agp-num" style="display: flex; align-items: center; gap: 8px; padding: 2px 6px; border-radius: 6px; background: {{ c.bg }}; font-size: 18px; font-weight: 600"><span style="width: 16px; color: #9aa3ad">{{ c.pos }}</span><span style="width: 4px; height: 16px; border-radius: 2px; background: {{ c.color }}"></span><span style="flex: 1">{{ c.code }}</span><span style="font-size: 15px; color: #c3c9d1">{{ c.gap }}</span></div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+
+<div style="position: absolute; right: 20px; top: 20px; width: 220px; padding: 10px; background: rgba(10,12,16,0.78); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08)">
+<svg viewBox="0 0 220 160" width="200" height="146" role="img" aria-label="Track map with car position" style="display: block">
+<path d="{{ mapPath }}" fill="none" stroke="#5b6470" stroke-width="7" stroke-linejoin="round"></path>
+<path d="{{ mapPath }}" fill="none" stroke="#e6e9ee" stroke-width="2.5" stroke-linejoin="round"></path>
+<circle cx="{{ startX }}" cy="{{ startY }}" r="4" fill="#ffffff"></circle>
+<circle cx="{{ carX }}" cy="{{ carY }}" r="6.5" fill="{{ accent }}" stroke="#0b0d10" stroke-width="2"></circle>
+</svg>
+<sc-for list="{{ mapDots }}" as="o" hint-placeholder-count="0">
+<div aria-hidden="true" style="position: absolute; left: {{ o.left }}px; top: {{ o.top }}px; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: {{ o.color }}; border: 1.5px solid #0b0d10; box-sizing: border-box"></div>
+</sc-for>
+<div class="agp-num" style="display: flex; justify-content: space-between; font-size: 14px; color: #9aa3ad; letter-spacing: 0.1em; padding: 0 4px"><span>{{ t.camera }}</span><span>LINE {{ t.line }}</span><span>{{ t.gearbox }}</span><span>{{ fpsLabel }}</span></div>
+</div>
+
+<sc-if value="{{ hasMessage }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 50%; top: 24px; transform: translateX(-50%); padding: 10px 22px; background: rgba(10,12,16,0.86); border-left: 0; border-radius: 10px; border: 1px solid {{ accent }}">
+<div class="agp-num" style="font-size: 24px; font-weight: 700; letter-spacing: 0.12em; white-space: nowrap">{{ t.message }}</div>
+</div>
+</sc-if>
+
+<div style="position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); display: {{ dashDisplay }}; flex-direction: column; align-items: center; gap: 10px; padding: 14px 22px 16px; background: rgba(10,12,16,0.82); border-radius: 18px; border: 1px solid rgba(255,255,255,0.08)">
+<div style="display: flex; gap: 6px" aria-hidden="true">
+<sc-for list="{{ leds }}" as="d" hint-placeholder-count="15">
+<div style="width: 16px; height: 16px; border-radius: 50%; background: {{ d.color }}; box-shadow: 0 0 10px {{ d.glow }}"></div>
+</sc-for>
+</div>
+<div style="display: flex; align-items: center; gap: 22px">
+<div style="display: flex; flex-direction: column; align-items: flex-end; width: 120px">
+<div class="agp-num" style="font-size: 52px; line-height: 0.95; font-weight: 700">{{ speed }}</div>
+<div class="agp-num" style="font-size: 14px; color: #9aa3ad; letter-spacing: 0.2em">{{ unitsLabel }}</div>
+</div>
+<div class="agp-num" style="width: 78px; height: 78px; display: flex; align-items: center; justify-content: center; border-radius: 14px; background: #161a20; border: 2px solid {{ accent }}; font-size: 66px; font-weight: 800; line-height: 1">{{ t.gear }}</div>
+<div style="display: flex; flex-direction: column; gap: 6px; width: 140px">
+<div class="agp-num" style="display: flex; justify-content: space-between; font-size: 14px; color: #9aa3ad; letter-spacing: 0.1em"><span>ERS</span><span style="color: {{ otColor }}">{{ otLabel }}</span></div>
+<div style="height: 10px; border-radius: 5px; background: #1e232b; overflow: hidden"><div style="height: 100%; width: {{ ersPct }}%; background: #f5c400"></div></div>
+<div style="display: flex; gap: 6px">
+<div class="agp-num" style="flex: 1; text-align: center; padding: 2px 0; border-radius: 6px; font-size: 15px; font-weight: 700; border: 1.5px solid {{ drsBorder }}; background: {{ drsBg }}; color: {{ drsColor }}">DRS</div>
+<div class="agp-num" style="flex: 1; text-align: center; padding: 2px 0; border-radius: 6px; font-size: 15px; font-weight: 700; background: {{ tcBg }}; color: {{ tcColor }}">TC</div>
+<div class="agp-num" style="flex: 1; text-align: center; padding: 2px 0; border-radius: 6px; font-size: 15px; font-weight: 700; background: {{ absBg }}; color: {{ absColor }}">ABS</div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="position: absolute; left: 20px; bottom: 20px; display: flex; gap: 14px; align-items: flex-end; padding: 12px 14px; background: rgba(10,12,16,0.78); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08)">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div class="agp-num" style="font-size: 13px; color: #9aa3ad; letter-spacing: 0.14em">{{ t.compound }} · TYRES</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{ tyres }}" as="y" hint-placeholder-count="4">
+<div style="width: 58px; padding: 4px 0; display: flex; flex-direction: column; align-items: center; border-radius: 8px; background: {{ y.bg }}; color: #0b0d10"><span class="agp-num" style="font-size: 19px; font-weight: 800; line-height: 1">{{ y.temp }}°</span><span class="agp-num" style="font-size: 12px; font-weight: 600">{{ y.wear }}</span></div>
+</sc-for>
+</div>
+</div>
+<div style="display: flex; gap: 6px; height: 92px; align-items: flex-end" aria-hidden="true">
+<div style="width: 14px; height: 100%; border-radius: 4px; background: #1e232b; display: flex; align-items: flex-end; overflow: hidden"><div style="width: 100%; height: {{ brakePct }}%; background: #ff3b30"></div></div>
+<div style="width: 14px; height: 100%; border-radius: 4px; background: #1e232b; display: flex; align-items: flex-end; overflow: hidden"><div style="width: 100%; height: {{ throttlePct }}%; background: #2bd96b"></div></div>
+</div>
+<div class="agp-num" style="display: flex; flex-direction: column; font-size: 15px; color: #c3c9d1; min-width: 96px"><span>LAT {{ gLat }}G</span><span>LON {{ gLong }}G</span><span style="color: {{ brakeColor }}">DISCS {{ brakeF }}°</span><span>FUEL {{ fuel }} KG</span></div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isLights }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 50%; top: 18%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 16px">
+<div style="display: flex; gap: 14px; padding: 14px 18px; background: #0b0d10; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1)" role="img" aria-label="{{ lightsAria }}">
+<sc-for list="{{ startLights }}" as="b" hint-placeholder-count="5">
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; background: #15181d; border-radius: 10px">
+<div style="width: 34px; height: 34px; border-radius: 50%; background: {{ b.color }}; box-shadow: 0 0 22px {{ b.glow }}"></div>
+<div style="width: 34px; height: 34px; border-radius: 50%; background: {{ b.color }}; box-shadow: 0 0 22px {{ b.glow }}"></div>
+</div>
+</sc-for>
+</div>
+<div class="agp-num" style="font-size: 20px; letter-spacing: 0.24em; color: #c3c9d1; text-shadow: 0 2px 8px #000">LAUNCH ON LIGHTS OUT · REV WITH THROTTLE</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ hasReaction }}" hint-placeholder-val="{{ false }}">
+<div class="agp-num" style="position: absolute; left: 50%; top: 84px; transform: translateX(-50%); font-size: 18px; letter-spacing: 0.16em; color: #c3c9d1; text-shadow: 0 2px 8px #000">REACTION {{ reaction }}</div>
+</sc-if>
+
+<sc-if value="{{ showPause }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(7,8,10,0.66)">
+<div style="display: flex; flex-direction: column; gap: 12px; width: 320px; padding: 24px; background: rgba(16,18,23,0.95); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1)">
+<div class="agp-num" style="font-size: 34px; font-weight: 800; letter-spacing: 0.08em">PAUSED</div>
+<button class="agp-btn" type="button" onClick="{{ resume }}" style="min-height: 48px; border: 0; border-radius: 10px; background: {{ accent }}; color: #120800; font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">RESUME</button>
+<sc-if value="{{ hasLaps }}" hint-placeholder-val="{{ false }}">
+<button class="agp-btn" type="button" onClick="{{ openTel }}" style="min-height: 48px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: transparent; color: #f3f4f6; font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">LAP TELEMETRY</button>
+</sc-if>
+<button class="agp-btn" type="button" onClick="{{ toMenu }}" style="min-height: 48px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: transparent; color: #f3f4f6; font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">BACK TO GARAGE</button>
+<div style="font-size: 12px; color: #9aa3ad">Esc resumes. Setup changes apply on the next run.</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isFinished }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; background: rgba(7,8,10,0.6)">
+<div style="display: flex; flex-direction: column; gap: 12px; width: 560px; max-width: 100%; max-height: 100%; overflow-y: auto; box-sizing: border-box; padding: 24px; background: rgba(16,18,23,0.96); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1)">
+<div class="agp-num" style="font-size: 14px; letter-spacing: 0.24em; color: {{ accent }}; font-weight: 700">CHEQUERED FLAG · {{ resultLaps }}</div>
+<div class="agp-num" style="font-size: 56px; line-height: 0.95; font-weight: 800; font-style: italic">{{ resultTitle }}</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div class="agp-num" style="display: flex; gap: 10px; padding: 0 10px; font-size: 13px; letter-spacing: 0.14em; color: #9aa3ad"><span style="width: 22px">P</span><span style="flex: 1">DRIVER</span><span style="width: 110px; text-align: right">TIME / GAP</span><span style="width: 96px; text-align: right">BEST LAP</span></div>
+<sc-for list="{{ tower }}" as="c" hint-placeholder-count="6">
+<div class="agp-num" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; background: {{ c.bg }}; font-size: 20px; font-weight: 600"><span style="width: 22px; color: #9aa3ad">{{ c.pos }}</span><span style="width: 4px; height: 18px; border-radius: 2px; background: {{ c.color }}"></span><span style="flex: 1">{{ c.name }}</span><span style="width: 110px; text-align: right; color: #c3c9d1">{{ c.gap }}</span><span style="width: 96px; text-align: right; color: {{ c.bestColor }}">{{ c.best }}</span></div>
+</sc-for>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<button class="agp-btn" type="button" onClick="{{ start }}" style="min-height: 48px; border: 0; border-radius: 10px; background: {{ accent }}; color: #120800; font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">RACE AGAIN</button>
+<button class="agp-btn" type="button" onClick="{{ toMenu }}" style="min-height: 48px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: transparent; color: #f3f4f6; font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">BACK TO GARAGE</button>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isTel }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; background: rgba(7,8,10,0.8)">
+<div style="display: flex; flex-direction: column; gap: 10px; width: 1120px; max-width: 100%; max-height: 100%; overflow-y: auto; box-sizing: border-box; padding: 20px 24px; background: rgba(16,18,23,0.97); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1)">
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div class="agp-num" style="font-size: 14px; letter-spacing: 0.24em; color: #9aa3ad; font-weight: 700">LAP TELEMETRY · {{ tel.title }}</div>
+<div class="agp-num" style="display: flex; align-items: baseline; gap: 14px; font-weight: 700; line-height: 1"><span style="font-size: 44px">{{ tel.lastTime }}</span><span style="font-size: 26px; color: {{ tel.deltaColor }}">{{ tel.delta }}</span></div>
+</div>
+<div class="agp-num" style="display: flex; gap: 18px; font-size: 16px; letter-spacing: 0.08em; color: #c3c9d1">
+<span style="display: flex; align-items: center; gap: 6px"><span style="width: 18px; height: 3px; background: #f3f4f6"></span>THIS LAP</span>
+<span style="display: flex; align-items: center; gap: 6px"><span style="width: 18px; height: 3px; background: #b469ff"></span>{{ tel.refLabel }}</span>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{ tel.sectors }}" as="s" hint-placeholder-count="3">
+<div class="agp-num" style="display: flex; justify-content: space-between; align-items: baseline; padding: 6px 12px; background: #0c0e12; border-radius: 8px; font-size: 18px"><span style="color: #9aa3ad">{{ s.name }}</span><span>{{ s.time }}</span><span style="color: {{ s.color }}">{{ s.delta }}</span></div>
+</sc-for>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div class="agp-num" style="display: flex; justify-content: space-between; font-size: 13px; letter-spacing: 0.14em; color: #9aa3ad"><span>SPEED · KM/H</span><span>{{ tel.speedNote }}</span></div>
+<div style="position: relative; height: 200px; background: #0c0e12; border-radius: 10px; overflow: hidden">
+<div style="position: absolute; top: 0; bottom: 0; left: {{ tel.lossLeft }}%; width: {{ tel.lossW }}%; background: rgba(255,90,79,0.14)"></div>
+<svg viewBox="0 0 1000 220" preserveAspectRatio="none" width="100%" height="100%" role="img" aria-label="Speed against lap distance, this lap and the reference lap" style="position: absolute; inset: 0; display: block">
+<path d="M0 27H1000M0 91.3H1000M0 155.7H1000M333.3 0V220M666.7 0V220" fill="none" stroke="#262b34" stroke-width="1" vector-effect="non-scaling-stroke"></path>
+<path d="{{ tel.speedRef }}" fill="none" stroke="#b469ff" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+<path d="{{ tel.speedLast }}" fill="none" stroke="#f3f4f6" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+</svg>
+<div class="agp-num" style="position: absolute; left: 6px; top: 12.3%; transform: translateY(-100%); font-size: 12px; color: #6b7480">300</div>
+<div class="agp-num" style="position: absolute; left: 6px; top: 41.5%; transform: translateY(-100%); font-size: 12px; color: #6b7480">200</div>
+<div class="agp-num" style="position: absolute; left: 6px; top: 70.8%; transform: translateY(-100%); font-size: 12px; color: #6b7480">100</div>
+<div class="agp-num" style="position: absolute; left: 30px; bottom: 4px; font-size: 12px; letter-spacing: 0.14em; color: #6b7480">SECTOR 1</div>
+<div class="agp-num" style="position: absolute; left: 33.33%; bottom: 4px; padding-left: 6px; font-size: 12px; letter-spacing: 0.14em; color: #6b7480">SECTOR 2</div>
+<div class="agp-num" style="position: absolute; left: 66.67%; bottom: 4px; padding-left: 6px; font-size: 12px; letter-spacing: 0.14em; color: #6b7480">SECTOR 3</div>
+</div>
+</div>
+
+<sc-if value="{{ tel.hasRef }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div class="agp-num" style="display: flex; justify-content: space-between; font-size: 13px; letter-spacing: 0.14em; color: #9aa3ad"><span>TIME DELTA · RED IS TIME LOST</span><span>{{ tel.deltaNote }}</span></div>
+<div style="position: relative; height: 64px; background: #0c0e12; border-radius: 10px; overflow: hidden">
+<svg viewBox="0 0 1000 64" preserveAspectRatio="none" width="100%" height="100%" role="img" aria-label="Running time difference to the reference lap" style="position: absolute; inset: 0; display: block">
+<path d="{{ tel.deltaLoss }}" fill="#ff5a4f" fill-opacity="0.75"></path>
+<path d="{{ tel.deltaGain }}" fill="#2bd96b" fill-opacity="0.75"></path>
+<path d="M0 32H1000M333.3 0V64M666.7 0V64" fill="none" stroke="#3a414c" stroke-width="1" vector-effect="non-scaling-stroke"></path>
+</svg>
+</div>
+</div>
+</sc-if>
+
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div class="agp-num" style="font-size: 13px; letter-spacing: 0.14em; color: #9aa3ad">THROTTLE</div>
+<div style="height: 46px; background: #0c0e12; border-radius: 10px; overflow: hidden">
+<svg viewBox="0 0 1000 46" preserveAspectRatio="none" width="100%" height="100%" role="img" aria-label="Throttle against lap distance" style="display: block">
+<path d="{{ tel.thrLast }}" fill="#2bd96b" fill-opacity="0.45"></path>
+<path d="{{ tel.thrRef }}" fill="none" stroke="#b469ff" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>
+</svg>
+</div>
+<div class="agp-num" style="font-size: 13px; letter-spacing: 0.14em; color: #9aa3ad">BRAKE</div>
+<div style="height: 46px; background: #0c0e12; border-radius: 10px; overflow: hidden">
+<svg viewBox="0 0 1000 46" preserveAspectRatio="none" width="100%" height="100%" role="img" aria-label="Brake against lap distance" style="display: block">
+<path d="{{ tel.brkLast }}" fill="#ff3b30" fill-opacity="0.55"></path>
+<path d="{{ tel.brkRef }}" fill="none" stroke="#b469ff" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>
+</svg>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+<div style="font-size: 13px; color: #c3c9d1; max-width: 760px">{{ tel.advice }}</div>
+<button class="agp-btn" type="button" onClick="{{ closeTel }}" style="min-height: 44px; padding: 0 28px; border: 0; border-radius: 10px; background: {{ accent }}; color: #120800; font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">CLOSE · T</button>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#ff6a1a","options":["#ff6a1a","#2f8cff","#e8ff3a","#ff2d55"]},"units":{"editor":"enum","options":["km/h","mph"],"default":"km/h"},"$preview":{"width":1440,"height":810}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { t: null, setup: { compound: 'soft', frontWing: 6, rearWing: 6, brakeBias: 57, tc: true, abs: true, autoGear: true, time: 'afternoon', line: 'full', ghost: true, mode: 'tt', laps: 3, skill: 'pro', track: 'kestrel', camera: 0 }, map: null, error: '' };
+    this.game = null; this.root = null;
+    this.setRoot = (el) => { this.root = el; };
+    this.setCanvas = (el) => {
+      if (!el || this.game) return;
+      if (!window.ApexGP || !window.THREE) { this.setState({ error: 'The 3D engine did not load. Reload the page.' }); return; }
+      this.canvas = el; this.load(this.state.setup.track);
+    };
+    // the engine builds one circuit's scenery when it is created, so changing circuit rebuilds the game on the same canvas
+    this.load = (track) => {
+      if (this.game) { this.game.destroy(); this.game = null; }
+      try {
+        this.game = window.ApexGP.create(this.canvas, { track, onTelemetry: (t) => this.setState({ t }) });
+        this.setState({ t: null, map: this.buildMap(this.game.track) });
+      } catch (e) { this.setState({ error: 'WebGL unavailable: ' + e.message }); }
+    };
+    this.nextTrack = () => {
+      const ids = window.ApexGP.TRACKS.map(t => t.id), track = ids[(ids.indexOf(this.state.setup.track) + 1) % ids.length];
+      this.setState({ setup: Object.assign({}, this.state.setup, { track }) }); this.load(track);
+    };
+    this.onKeyDown = (e) => {
+      if (!this.game) return;
+      const c = e.code;
+      if (c === 'ArrowUp' || c === 'ArrowDown' || c === 'ArrowLeft' || c === 'ArrowRight' || c === 'Space') e.preventDefault();
+      const phase = this.state.t ? this.state.t.phase : 'menu';
+      if (c === 'Enter' && phase === 'menu') { this.start(); return; }
+      if (e.repeat) return;
+      this.game.key(c, true);
+    };
+    this.onKeyUp = (e) => { if (this.game) this.game.key(e.code, false); };
+    this.start = () => {
+      if (!this.game) return;
+      const s = this.state.setup;
+      this.game.begin(Object.assign({}, s, { time: s.time === 'golden' ? 7 : 38 }));
+      this.game.camera(s.camera);
+      if (this.root) this.root.focus();
+    };
+    this.resume = () => { if (this.game) this.game.resume(); if (this.root) this.root.focus(); };
+    this.toMenu = () => { if (this.game) this.game.menu(); };
+    this.openTel = () => { if (this.game) this.game.showTelemetry(true); if (this.root) this.root.focus(); };
+    this.closeTel = () => { if (this.game) this.game.showTelemetry(false); if (this.root) this.root.focus(); };
+    this.clearBest = () => { if (this.game) this.game.clearBest(); };
+    const num = (k) => (e) => { const v = parseFloat(e.target.value); this.setState({ setup: Object.assign({}, this.state.setup, { [k]: v }) }); };
+    this.onFrontWing = num('frontWing'); this.onRearWing = num('rearWing'); this.onBias = num('brakeBias');
+  }
+  componentWillUnmount() { if (this.game) this.game.destroy(); }
+  buildMap(tr) {
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (let i = 0; i < tr.N; i++) { x0 = Math.min(x0, tr.px[i]); x1 = Math.max(x1, tr.px[i]); z0 = Math.min(z0, tr.pz[i]); z1 = Math.max(z1, tr.pz[i]); }
+    const sc = Math.min(200 / (x1 - x0), 140 / (z1 - z0));
+    const ox = 10 + (200 - (x1 - x0) * sc) / 2, oz = 10 + (140 - (z1 - z0) * sc) / 2;
+    const f = (x, z) => [ox + (x - x0) * sc, oz + (z - z0) * sc];
+    let d = '';
+    for (let i = 0; i < tr.N; i += 4) { const p = f(tr.px[i], tr.pz[i]); d += (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }
+    const st = f(tr.px[0], tr.pz[0]);
+    return { d: d + 'Z', f, start: st };
+  }
+  // Telemetry screen: SVG paths over lap distance for the lap just finished against the best lap before it.
+  buildTel() {
+    const d = this.game.lapData(), a = d.last, b = d.ref;
+    if (!a) return null;
+    const n = a.n, X = (i) => (i / (n - 1) * 1000).toFixed(1);
+    const line = (arr, H, max) => { let s = ''; for (let i = 0; i < n; i++) s += (i ? 'L' : 'M') + X(i) + ' ' + (H - Math.min(arr[i] / max, 1) * H).toFixed(1); return s; };
+    const area = (arr, H, max, zero) => line(arr, H, max) + 'L1000 ' + zero + 'L0 ' + zero + 'Z';
+    const fmt = (t) => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(3); };
+    const sgn = (v) => (v > 0 ? '+' : '−') + Math.abs(v).toFixed(3);
+    const col = (v) => v > 0 ? '#ff5a4f' : '#2bd96b';
+    const kmh = (arr, f) => Math.round(f.apply(null, arr) * 3.6);
+    const out = {
+      title: 'LAP ' + a.lap + (a.valid ? '' : ' · INVALID'), lastTime: fmt(a.lapTime), hasRef: !!b,
+      refLabel: b ? 'BEST ' + fmt(b.lapTime) : 'NO REFERENCE YET', delta: '', deltaColor: '#9aa3ad', deltaNote: '',
+      speedLast: line(a.v, 220, 95), speedRef: b ? line(b.v, 220, 95) : 'M0 0',
+      thrLast: area(a.thr, 46, 1, 46), thrRef: b ? line(b.thr, 46, 1) : 'M0 0',
+      brkLast: area(a.brk, 46, 1, 46), brkRef: b ? line(b.brk, 46, 1) : 'M0 0',
+      deltaLoss: 'M0 0', deltaGain: 'M0 0', lossLeft: 0, lossW: 0,
+      speedNote: 'TOP ' + kmh(a.v, Math.max) + ' · SLOWEST ' + kmh(a.v, Math.min),
+      sectors: [0, 1, 2].map(k => ({ name: 'S' + (k + 1), time: a.sectors[k] === null ? '—' : a.sectors[k].toFixed(3), delta: '', color: '#9aa3ad' })),
+      advice: 'Set another valid lap to compare against this one.',
+    };
+    if (!b) return out;
+    const dt = new Float32Array(n); let lim = 0.1;
+    for (let i = 0; i < n; i++) { dt[i] = a.t[i] - b.t[i]; lim = Math.max(lim, Math.abs(dt[i])); }
+    const half = (keep) => { let s = 'M0 32'; for (let i = 0; i < n; i++) s += 'L' + X(i) + ' ' + (32 - keep(dt[i]) / lim * 30).toFixed(1); return s + 'L1000 32Z'; };
+    out.deltaLoss = half(v => Math.max(v, 0)); out.deltaGain = half(v => Math.min(v, 0));
+    const total = a.lapTime - b.lapTime;
+    out.delta = sgn(total); out.deltaColor = col(total); out.deltaNote = 'SCALE ±' + lim.toFixed(2) + ' S';
+    out.speedNote += ' · BEST LAP TOP ' + kmh(b.v, Math.max) + ' · SLOWEST ' + kmh(b.v, Math.min);
+    out.sectors.forEach((s, k) => { if (a.sectors[k] !== null && b.sectors && b.sectors[k] !== null) { const v = a.sectors[k] - b.sectors[k]; s.delta = sgn(v); s.color = col(v); } });
+    // the 200 m stretch where the most time went, and where the most came back
+    const w = Math.round(200 / d.ds); let worst = 0, wi = 0, bestG = 0, gi = 0;
+    for (let i = 0; i + w < n; i++) { const g = dt[i + w] - dt[i]; if (g > worst) { worst = g; wi = i; } if (g < bestG) { bestG = g; gi = i; } }
+    const span = (i) => Math.round(i * d.ds) + '–' + Math.round((i + w) * d.ds) + ' m';
+    if (worst > 0.02) { out.lossLeft = wi / (n - 1) * 100; out.lossW = w / (n - 1) * 100; }
+    out.advice = (worst > 0.02 ? 'Most time lost: ' + span(wi) + ' (+' + worst.toFixed(3) + ' s, shaded on the speed trace). ' : 'No stretch lost meaningful time. ')
+      + (bestG < -0.02 ? 'Most gained: ' + span(gi) + ' (−' + Math.abs(bestG).toFixed(3) + ' s).' : '');
+    return out;
+  }
+  renderVals() {
+    const accent = this.props.accent ?? '#ff6a1a';
+    const units = this.props.units ?? 'km/h';
+    const t = this.state.t || { phase: 'menu', lights: 0, speed: 0, gear: '1', rpmFrac: 0, throttle: 0, brake: 0, lap: 0, lapTime: '0:00.000', lastLap: '--:--.---', bestLap: '--:--.---', ers: 1, tyres: [], sectors: [], laps: [], camera: 'CHASE', gearbox: 'AUTO', compound: 'SOFT', message: '', gLat: 0, gLong: 0 };
+    const setup = this.state.setup, phase = t.phase;
+    const pick = (c) => () => this.setState({ setup: Object.assign({}, setup, { compound: c }) });
+    const compounds = [['soft', 'Soft', '#ff3b30'], ['medium', 'Medium', '#f5c400'], ['hard', 'Hard', '#f3f4f6']].map(([id, label, ring]) => {
+      const on = setup.compound === id;
+      return { label, ring, pick: pick(id), pressed: on ? 'true' : 'false', border: on ? accent : 'rgba(255,255,255,0.14)', bg: on ? 'rgba(255,106,26,0.14)' : 'rgba(255,255,255,0.03)' };
+    });
+    const notes = { soft: 'Most grip, warms fastest, wears quickest. Best window ~95°C.', medium: 'Balanced grip and life. Best window ~100°C.', hard: 'Least grip, slow to warm, lasts longest. Best window ~105°C.' };
+    const flip = (k) => () => this.setState({ setup: Object.assign({}, setup, { [k]: !setup[k] }) });
+    const tog = (label, on, f, onTxt, offTxt) => ({ label, flip: f, pressed: on ? 'true' : 'false', state: on ? onTxt : offTxt, stateColor: on ? '#2bd96b' : '#9aa3ad', border: on ? 'rgba(43,217,107,0.5)' : 'rgba(255,255,255,0.14)', bg: on ? 'rgba(43,217,107,0.08)' : 'rgba(255,255,255,0.03)' });
+    const golden = setup.time === 'golden';
+    const LINE_NEXT = { full: 'braking', braking: 'off', off: 'full' }, LINE_LABEL = { full: 'FULL', braking: 'BRAKING', off: 'OFF' };
+    const toggles = [
+      tog('Traction ctrl', setup.tc, flip('tc'), 'ON', 'OFF'),
+      tog('Anti-lock', setup.abs, flip('abs'), 'ON', 'OFF'),
+      tog('Gearbox', setup.autoGear, flip('autoGear'), 'AUTO', 'MANUAL'),
+      tog('Racing line', setup.line !== 'off', () => this.setState({ setup: Object.assign({}, setup, { line: LINE_NEXT[setup.line] }) }), LINE_LABEL[setup.line], 'OFF'),
+      tog('Ghost car', setup.ghost, flip('ghost'), 'ON', 'OFF'),
+      tog('Session time', golden, () => this.setState({ setup: Object.assign({}, setup, { time: golden ? 'afternoon' : 'golden' }) }), 'GOLDEN HR', 'AFTERNOON'),
+    ];
+    const race = t.race, isRaceSetup = setup.mode === 'race';
+    const modes = [['tt', 'TIME TRIAL'], ['race', 'RACE']].map(([id, label]) => { const on = setup.mode === id; return { label, pick: () => this.setState({ setup: Object.assign({}, setup, { mode: id }) }), pressed: on ? 'true' : 'false', border: on ? accent : 'rgba(255,255,255,0.14)', bg: on ? 'rgba(255,106,26,0.14)' : 'rgba(255,255,255,0.03)' }; });
+    const cyc = (k, list) => () => this.setState({ setup: Object.assign({}, setup, { [k]: list[(list.indexOf(setup[k]) + 1) % list.length] }) });
+    const raceOpts = [{ label: 'Race length', state: setup.laps + ' LAPS', flip: cyc('laps', [3, 5, 10]) }, { label: 'AI skill', state: setup.skill.toUpperCase(), flip: cyc('skill', ['rookie', 'pro', 'elite']) }];
+    const tr = this.game ? this.game.track : null, def = window.ApexGP ? window.ApexGP.trackDef(setup.track) : { name: '', note: '' };
+    const CAM_LABEL = ['CHASE', 'T-CAM', 'COCKPIT'];
+    const sessionOpts = [{ label: 'Circuit', state: def.name.replace(/ (Circuit|Autodrome)$/, '').toUpperCase() + ' ›', flip: this.nextTrack }, { label: 'View', state: CAM_LABEL[setup.camera], flip: cyc('camera', [0, 1, 2]) }];
+    const trackLine = tr ? tr.name + ' · ' + (tr.L / 1000).toFixed(3) + ' km · ' + tr.turns + ' turns' : '';
+    const hueCol = (h) => 'hsl(' + ((22 + h) % 360) + ' 85% 60%)';
+    const raceBest = race ? race.cars.reduce((m, c) => c.best && c.best < m ? c.best : m, '9') : '';
+    const tower = race ? race.cars.map(c => ({ pos: c.pos, code: c.code, name: c.name, gap: c.gap, best: c.best || '—', bestColor: c.best === raceBest ? '#c58bff' : '#c3c9d1', color: c.you ? accent : hueCol(c.hue), bg: c.you ? 'rgba(255,255,255,0.12)' : 'transparent' })) : [];
+    const ord = ['', 'ST', 'ND', 'RD'];
+    const dfTotal = (1.80 + 0.11 * setup.frontWing) + (2.20 + 0.13 * setup.rearWing);
+    const front = Math.round((1.80 + 0.11 * setup.frontWing) / dfTotal * 100);
+    const aeroNote = 'Downforce ' + (dfTotal * 0.5 * 1.225 * 69.4 * 69.4 / 9.81).toFixed(0) + ' kg at 250 km/h · ' + front + '% front · top speed ' + (setup.rearWing <= 3 ? 'high' : setup.rearWing >= 8 ? 'low' : 'medium');
+    const leds = [];
+    const lit = Math.round((t.rpmFrac || 0) * 15), shift = (t.rpmFrac || 0) > 0.97;
+    for (let i = 0; i < 15; i++) {
+      const base = shift ? '#5b8cff' : i < 5 ? '#2bd96b' : i < 10 ? '#ff3b30' : '#5b8cff';
+      const on = shift || i < lit;
+      leds.push({ color: on ? base : '#1b1f26', glow: on ? base : 'transparent' });
+    }
+    const tcol = (T) => T < 70 ? '#6fb3ff' : T < 88 ? '#7fe3d8' : T <= 110 ? '#2bd96b' : T <= 125 ? '#f5c400' : '#ff5a4f';
+    const order = [1, 0, 3, 2];
+    const tyres = (t.tyres && t.tyres.length ? order.map(i => t.tyres[i]) : [{ t: 80, wear: 0 }, { t: 80, wear: 0 }, { t: 80, wear: 0 }, { t: 80, wear: 0 }]).map(y => ({ temp: y.t, wear: (100 - y.wear) + '%', bg: tcol(y.t) }));
+    const secCol = { best: '#b469ff', pb: '#2bd96b', slower: '#f5c400', none: '#2a2f37' };
+    const sectors = [0, 1, 2].map(k => { const s = (t.sectors || [])[k] || { state: 'none', time: '' }; return { color: secCol[s.state], label: s.time || 'S' + (k + 1) }; });
+    const d = t.delta;
+    const map = this.state.map;
+    const car = map ? map.f(t.mapX || 0, t.mapZ || 0) : [0, 0];
+    const lightsN = t.lights || 0;
+    const startLights = [0, 1, 2, 3, 4].map(i => ({ color: i < lightsN ? '#ff2a1a' : '#2a1414', glow: i < lightsN ? 'rgba(255,42,26,0.9)' : 'transparent' }));
+    const mapDots = map && race ? race.cars.filter(c => !c.you).map(c => { const p = map.f(c.x, c.z); return { left: (10 + p[0] * 200 / 220).toFixed(1), top: (10 + p[1] * 146 / 160).toFixed(1), color: hueCol(c.hue) }; }) : [];
+    const laps = (t.laps || []).map(l => ({ lap: l.lap, time: l.time, color: l.valid ? '#f3f4f6' : '#ff8a80' }));
+    if (t.tel && this.game && (this.telKey !== t.lapsDone || !this.tel)) { this.tel = this.buildTel(); this.telKey = t.lapsDone; }
+    const tel = t.tel && this.tel ? this.tel : null;
+    const hasBest = !!t.bestLap && t.bestLap.charAt(0) !== '-';
+    return {
+      accent, t, setup, compounds, toggles, aeroNote, compoundNote: notes[setup.compound],
+      isMenu: phase === 'menu', isDriving: phase === 'run' || phase === 'lights' || phase === 'paused' || phase === 'finished',
+      modes, isRaceSetup, raceOpts, sessionOpts, trackLine, trackNote: def.note + '. Cockpit is the first-person view; C changes view while driving.', isRace: !!race, tower, mapDots, isFinished: phase === 'finished' && !!race,
+      modeLine: (isRaceSetup ? 'RACE · ' + setup.laps + ' LAPS · 6 CARS' : 'TIME TRIAL') + ' · DRY · 26°C',
+      resultTitle: race ? 'P' + race.pos + ' OF ' + race.n : '', resultLaps: race ? race.laps + ' LAPS' : '', isLights: phase === 'lights', isPaused: phase === 'paused',
+      status: this.state.error || (this.game ? 'Circuit loaded. Press Enter or Go to grid.' : 'Loading circuit…'),
+      hasLaps: laps.length > 0, laps, hasSession: laps.length > 0 || hasBest, isTel: !!tel, tel: tel || {}, showPause: phase === 'paused' && !tel,
+      openTel: this.openTel, closeTel: this.closeTel, clearBest: this.clearBest,
+      controls: [
+        { what: 'Throttle / brake', key: '↑ ↓  or  W S' }, { what: 'Steer', key: '← →  or  A D' }, { what: 'Shift up / down', key: 'E / Q' },
+        { what: 'DRS (in zones)', key: 'X' }, { what: 'ERS overtake', key: 'Space' }, { what: 'Camera', key: 'C' },
+        { what: 'Racing line · ghost', key: 'L · G' }, { what: 'Lap telemetry', key: 'T' }, { what: 'Recover to track', key: 'R' }, { what: 'Pause · mute · effects', key: 'Esc · M · B' },
+      ],
+      lapLabel: race ? 'LAP ' + race.lap + '/' + race.laps + ' · P' + race.pos + (ord[race.pos] || 'TH') : t.lap === 0 ? 'START' : 'LAP ' + t.lap, invalidLabel: t.invalid ? 'INVALID' : '', invalidColor: '#ff8a80',
+      deltaText: d === null || d === undefined ? '' : (d > 0 ? '+' : '−') + Math.abs(d).toFixed(3), deltaColor: d > 0 ? '#ff5a4f' : '#2bd96b',
+      sectors, lastColor: t.lastValid === false ? '#ff8a80' : '#f3f4f6',
+      mapPath: map ? map.d : 'M0 0', startX: map ? map.start[0] : 0, startY: map ? map.start[1] : 0, carX: car[0], carY: car[1],
+      hasMessage: !!t.message,
+      fpsLabel: t.fps ? t.fps + ' FPS' : '',
+      dashDisplay: t.camera === 'COCKPIT' ? 'none' : 'flex', // in the cockpit the steering wheel's own display carries this
+      leds, speed: units === 'mph' ? Math.round((t.speed || 0) * 0.6214) : (t.speed || 0), unitsLabel: units === 'mph' ? 'MPH' : 'KM/H',
+      ersPct: Math.round((t.ers ?? 1) * 100), otLabel: t.overtake ? 'OVERTAKE' : Math.round((t.ers ?? 1) * 100) + '%', otColor: t.overtake ? '#f5c400' : '#9aa3ad',
+      drsBorder: t.drs === 'off' || !t.drs ? '#3a414c' : '#2bd96b', drsBg: t.drs === 'open' ? '#2bd96b' : 'transparent', drsColor: t.drs === 'open' ? '#0b0d10' : t.drs === 'avail' ? '#2bd96b' : '#5b6470',
+      tcBg: t.tc ? '#f5c400' : '#1e232b', tcColor: t.tc ? '#0b0d10' : '#5b6470', absBg: t.abs ? '#f5c400' : '#1e232b', absColor: t.abs ? '#0b0d10' : '#5b6470',
+      tyres, brakePct: Math.round((t.brake || 0) * 100), throttlePct: Math.round((t.throttle || 0) * 100),
+      gLat: Math.abs(t.gLat || 0).toFixed(1), gLong: (t.gLong || 0).toFixed(1),
+      brakeF: t.brakes ? t.brakes[0] : 350, brakeColor: !t.brakes ? '#c3c9d1' : t.brakes[0] > 1050 ? '#ff5a4f' : t.brakes[0] < 300 ? '#6fb3ff' : '#c3c9d1', fuel: (t.fuel ?? 10).toFixed(1),
+      startLights, lightsAria: lightsN + ' of 5 start lights on',
+      hasReaction: phase === 'run' && !race && t.reaction !== null && t.reaction !== undefined && t.lap === 0, reaction: t.reaction ? t.reaction.toFixed(3) + ' s' : '',
+      start: this.start, resume: this.resume, toMenu: this.toMenu, onFrontWing: this.onFrontWing, onRearWing: this.onRearWing, onBias: this.onBias,
+      setRoot: this.setRoot, setCanvas: this.setCanvas, onKeyDown: this.onKeyDown, onKeyUp: this.onKeyUp,
+    };
+  }
+}
+</script>
+</body>
+</html>
