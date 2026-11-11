@@ -461,7 +461,7 @@ class Component extends DCLogic {
     const raceOpts = [{ label: 'Race length', state: setup.laps + ' LAPS', flip: cyc('laps', [3, 5, 10]) }, { label: 'AI skill', state: setup.skill.toUpperCase(), flip: cyc('skill', ['rookie', 'pro', 'elite']) }];
     const tr = this.game ? this.game.track : null, def = window.ApexGP ? window.ApexGP.trackDef(setup.track) : { name: '', note: '' };
     const CAM_LABEL = ['CHASE', 'T-CAM', 'COCKPIT'];
-    const sessionOpts = [{ label: 'Circuit', state: def.name.replace(/ (Circuit|Autodrome)$/, '').toUpperCase() + ' ›', flip: this.nextTrack }, { label: 'View', state: CAM_LABEL[setup.camera], flip: cyc('camera', [0, 1, 2]) }, { label: 'Menu shows', state: this.mapOn ? 'CIRCUIT MAP' : 'THE CAR', flip: this.toggleMap }];
+    const sessionOpts = [{ label: 'Circuit', state: (def.short || def.name.replace(/ (Circuit|Autodrome)$/, '')).toUpperCase() + ' ›', flip: this.nextTrack }, { label: 'View', state: CAM_LABEL[setup.camera], flip: cyc('camera', [0, 1, 2]) }, { label: 'Menu shows', state: this.mapOn ? 'CIRCUIT MAP' : 'THE CAR', flip: this.toggleMap }];
     const trackLine = tr ? tr.name + ' · ' + (tr.L / 1000).toFixed(3) + ' km · ' + tr.turns + ' turns' : '';
     const hueCol = (h) => 'hsl(' + ((22 + h) % 360) + ' 85% 60%)';
     const raceBest = race ? race.cars.reduce((m, c) => c.best && c.best < m ? c.best : m, '9') : '';

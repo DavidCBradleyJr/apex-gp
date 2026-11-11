@@ -13,23 +13,37 @@ const lerp = (a, b, t) => a + (b - a) * t;
 // The real layouts are flat copies of the centre lines in the TUM racetrack database (LGPL-3.0, from OpenStreetMap), made by
 // tools/import-track.js: start line at [-500,0] heading +x like the rest, but with their own, shorter start straights.
 const TRACKS = [
-  { id: 'kestrel', name: 'Kestrel Valley Circuit', note: 'Flowing mid-speed layout',
+  { id: 'kestrel', name: 'Kestrel Valley Circuit', note: 'Flowing mid-speed layout', world: 'alpine',
     pts: [[-500,0],[0,0],[450,0],[570,40],[605,160],[585,320],[650,450],[780,500],[860,620],[810,760],[650,825],[450,805],[100,820],[-180,830],[-320,800],[-355,690],[-350,570],[-318,500],[-388,430],[-360,360],[-400,250],[-560,130],[-640,45],[-600,-5]] },
-  { id: 'virel', name: 'Virel Park Autodrome', note: 'Power circuit: long straights, big stops',
+  { id: 'virel', name: 'Virel Park Autodrome', note: 'Power circuit: long straights, big stops', world: 'park', city: { kind: 'skyline', x: 2100, z: -700, r: 520 },
     pts: [[-500,0],[0,0],[450,0],[720,10],[850,90],[870,230],[800,330],[560,380],[470,440],[480,530],[560,580],[800,620],[870,720],[820,830],[680,870],[200,850],[-150,830],[-250,770],[-230,690],[-310,630],[-480,640],[-620,570],[-690,420],[-660,250],[-680,130],[-640,45],[-600,-5]] },
-  { id: 'callow', name: 'Callow Heath', note: 'Tight and technical: hairpins and esses',
+  { id: 'callow', name: 'Callow Heath', note: 'Tight and technical: hairpins and esses', world: 'heath',
     pts: [[-500,0],[0,0],[450,0],[540,30],[560,110],[500,170],[380,180],[330,250],[400,330],[520,340],[600,420],[580,540],[480,600],[330,580],[250,480],[160,440],[80,500],[90,620],[0,700],[-140,690],[-220,600],[-200,480],[-280,400],[-420,420],[-520,360],[-560,240],[-600,130],[-640,45],[-600,-5]] },
-  { id: 'monza', name: 'Monza', note: 'Real layout, 5.79 km: flat out between three chicanes',
+  // the circuit lies in a walled royal park with the town against its southern edge (south is -x here) and the Alps to the north
+  { id: 'monza', name: 'Autodromo Nazionale Monza', short: 'Monza', note: 'Real layout, 5.79 km: flat out between three chicanes', world: 'park', peaks: { at: 0, arc: 1.5 }, city: { kind: 'town', x: -1900, z: 420, r: 640 },
     pts: [[-500,0],[-385,0.2],[-270.1,0.6],[-155.2,1],[-40.2,0.6],[74.7,-0.5],[189.7,-1.9],[304.6,-3.1],[379.6,-3.9],[394.5,-4.1],[404.5,-4.2],[419.2,-3.5],[430.2,2.3],[434.2,14.7],[438.2,27.9],[448.6,35.2],[462.3,34.5],[481.2,28.2],[556.5,1.5],[635.5,-9.5],[740.4,-11.5],[809.8,-5.1],[871.1,16.1],[926.4,49.8],[991.5,118.5],[1035.8,202],[1066.7,312.5],[1086.7,425.7],[1106.6,538.9],[1117.1,613],[1119.1,627.9],[1120.6,637.8],[1122.3,647.8],[1126.4,661.7],[1135.3,671.6],[1149,676.7],[1162.5,681.6],[1171.6,691.5],[1176.4,705.3],[1206.3,784.7],[1253.4,889.5],[1275.6,939.8],[1285,962.9],[1290.9,987],[1288.8,1011.5],[1281.3,1029.7],[1269.2,1045.5],[1253.4,1057.2],[1230.1,1065.3],[1151.7,1081],[1043.7,1101.7],[1024.1,1105.4],[1009.3,1108.1],[994.5,1109.3],[980.4,1106.4],[968.2,1098.7],[955.6,1083.4],[910,1017.7],[844.5,923.3],[779,828.8],[704.5,741.6],[620.6,663],[536.9,584.2],[453.1,505.5],[369.3,426.8],[300.2,361.8],[285.6,348.1],[274.5,338],[262.5,329.6],[248.8,325.9],[234.1,327.2],[199.7,333.3],[165.1,331.5],[132.7,319],[116.6,307.5],[105.8,297.1],[95.1,286.6],[82.9,279.1],[68.7,275.9],[38.6,274.1],[-76.2,271.4],[-191.2,269.5],[-306.1,269.1],[-421.1,268.7],[-536,268.1],[-651,267.6],[-765.9,267.2],[-850.9,266.9],[-875.9,266.5],[-900.6,264.4],[-923.7,255.7],[-942.9,240.2],[-957.1,219.9],[-964.9,196.5],[-964.8,171.9],[-955,138.5],[-928.2,96.7],[-886.3,61.5],[-827.3,35.1],[-734,18.1],[-619.7,5.9],[-505,0]] },
-  { id: 'silverstone', name: 'Silverstone', note: 'Real layout, 5.89 km: fast sweepers all lap',
+  // a wartime airfield in open Northamptonshire farmland; the village is a kilometre to the north (north is +x, -z here)
+  { id: 'silverstone', name: 'Silverstone Circuit', short: 'Silverstone', note: 'Real layout, 5.89 km: fast sweepers all lap', world: 'farmland', city: { kind: 'village', x: 1180, z: -820, r: 230 },
     pts: [[-500,0],[-390,0],[-280,-0.1],[-240,-0.3],[-220,-0.4],[-200.3,1.2],[-182.6,9.2],[-163.6,25.2],[-139.5,56.9],[-98.6,119.7],[-70.7,161],[-45.5,185.1],[-15.1,202],[42.3,219.1],[134.7,241.2],[154.2,245.8],[168.7,249.5],[182.4,255],[192.9,264.3],[196.9,277.5],[193.9,291.3],[186.5,304.1],[160.3,340.8],[151.6,352.9],[143.2,365.3],[136.7,378.5],[136.2,391.8],[144.5,401.4],[158.3,405.4],[173,405.3],[197.2,399.6],[266.3,371],[283.5,360.7],[295.8,352.3],[307.2,342.6],[315.9,330.9],[320.8,317.1],[324.8,287.4],[334.1,177.8],[343.2,68.2],[352.5,-41.4],[361.7,-151],[370.2,-260.7],[373,-295.6],[374.2,-320.5],[370.3,-344.9],[362.1,-362.9],[353.6,-375.1],[342.9,-385.3],[330,-392.3],[315.7,-394.6],[301.4,-392],[283.7,-383.2],[258.3,-367.3],[241,-357.2],[222.7,-349.6],[203.3,-347.4],[188.8,-350.3],[175.7,-356.8],[165.2,-366.9],[158.4,-379.8],[155.6,-399.1],[159.6,-418.2],[169.8,-435],[185.1,-447.2],[203.6,-454.1],[247.6,-463.1],[311.4,-475.9],[360.8,-482],[410.5,-477],[440,-471.4],[467.7,-461],[508.2,-432.1],[567.7,-371.4],[646.2,-287.4],[720.4,-206.1],[763.5,-157.5],[786.5,-131.1],[802.7,-100.5],[811,-71.8],[813.3,-47],[809.3,-22.7],[798,-0.6],[754.5,60.4],[678.8,146.9],[597.1,220.5],[528,278.1],[491.1,311.7],[463.5,353.1],[453.7,376],[445.9,394.3],[434,410],[417.8,421.1],[389.7,431.5],[342.2,446.8],[314.6,458.4],[289.8,475],[271.3,498.1],[260.4,525.9],[254,550],[243.6,572.4],[226.5,590.2],[204.5,600.9],[179.9,603.7],[150.6,598.2],[104.1,580.3],[76.1,570],[46.7,565.9],[12,569.8],[-101.6,587.7],[-210.2,605.2],[-318.9,622.3],[-427.6,639.5],[-541,658],[-655.6,666.9],[-695.6,669.2],[-720.5,669.2],[-744.8,664.4],[-766.6,652.8],[-784.8,635.9],[-798.2,615.1],[-804.3,591.2],[-802.4,561.6],[-791.5,533.9],[-752.2,447.6],[-726.3,335.8],[-710.4,252.3],[-707,237.7],[-704.7,227.9],[-701.9,213.3],[-702.6,199.4],[-710.4,188.1],[-723.1,181.4],[-737.5,177.7],[-751.5,173.1],[-763.6,165.1],[-771.4,153.2],[-773.5,139],[-770.8,119.3],[-753,67.5],[-734.9,37.6],[-725.7,25.8],[-715.5,14.9],[-703.6,6.2],[-689.8,1.5],[-670,0.1],[-565,0]] },
-  { id: 'bahrain', name: 'Bahrain', note: 'Real layout, 5.41 km: long straights into hairpins',
+  // desert at Sakhir; Manama's towers are to the north-east (really 25 km off, brought in to where the haze still shows them)
+  { id: 'bahrain', name: 'Bahrain International Circuit', short: 'Bahrain', note: 'Real layout, 5.41 km: long straights into hairpins', world: 'desert', city: { kind: 'skyline', x: 1250, z: 2150, r: 480 },
     pts: [[-500,0],[-390,0],[-280,-0.1],[-170,-0.1],[-60,-0.1],[50.1,-0.2],[160.1,-0.9],[185.1,-1.1],[195.1,-1.2],[205.1,-1.3],[219.8,-0.7],[231.5,4.5],[234.1,15.8],[227.5,27.9],[214.4,43],[204.5,54.2],[194.5,65.4],[185.7,77.3],[181.8,90.7],[184.1,104.9],[192.5,128.4],[204.7,161.2],[213.9,189.6],[215.1,219.3],[206.7,278.7],[190.4,387.5],[174.1,496.3],[157.7,605.1],[142.9,704],[140.6,718.8],[138.4,733.6],[135.4,748.1],[128.7,760],[116.3,765.8],[101.7,766.7],[87.1,764.7],[74.4,758.3],[63.8,748.1],[20.4,699.7],[-42.3,635.3],[-77.6,607.6],[-109,592.3],[-123,586.9],[-136.6,581],[-148.4,572.5],[-157.1,560.8],[-163.3,542.2],[-164.3,517.4],[-162.6,492.5],[-161.6,467.6],[-167,443.7],[-180.4,423],[-203.1,403.8],[-292.5,339.5],[-312.7,324.9],[-320.9,319.1],[-332.9,310.1],[-342.5,299.7],[-345.7,286.5],[-342.2,273],[-332.5,264.1],[-318.5,261.5],[-298.7,262.8],[-184.4,275.9],[-75.1,288.4],[-40.3,291.9],[-10.6,290.6],[13.3,283.6],[34.2,270.6],[47.9,256.3],[57.1,244.4],[64.7,231.9],[65.7,219.6],[56.5,211.5],[42.3,208.4],[-2.5,204.4],[-117.1,196.5],[-227.2,196.5],[-337.2,196.5],[-447.2,196.8],[-557.2,197.1],[-592.2,197.2],[-607.1,197.2],[-622.1,197.7],[-635.9,201.1],[-645.4,210.7],[-650.8,224.3],[-654.3,248.8],[-649.9,288.3],[-637.8,321],[-617.2,348.8],[-589.3,369.7],[-543.5,389.2],[-510.3,400.3],[-482.7,411.8],[-459.1,430],[-439.2,452.3],[-424.9,478.3],[-418.6,507.4],[-421.5,547],[-436.3,589.3],[-455.9,635.3],[-463.7,653.7],[-473,671.2],[-490.2,688.7],[-502.6,697.1],[-515.5,704.5],[-529.4,709.5],[-543.8,710],[-557.2,705],[-568.7,695.8],[-584.3,676.4],[-614.7,624.7],[-672.5,531.1],[-730.3,437.5],[-788.3,344],[-846.1,250.5],[-904.4,157.2],[-940.2,97],[-947.7,84],[-955.2,71],[-961.4,57.9],[-961.2,44.5],[-952.9,33.9],[-940.1,26.6],[-917.5,16.1],[-894.5,6.5],[-865,2.8],[-755,1],[-645,0],[-535,0]] },
 ];
 for (const t of TRACKS) { t.halfW = 6.5; t.kerbW = 1.2; }
 const CIRCUIT = TRACKS[0];
 const trackDef = (id) => TRACKS.find(t => t.id === id) || CIRCUIT;
 
+// What surrounds a circuit. ground / mow: the land and the mown verge. relief: how much the land rolls. forest: 0 open … 1 wooded.
+// trees: kinds and their shares. bush: scrub along the fences [amount, hue, saturation, lightness]. rocks: boulders.
+// fields: a patchwork of crops. peaks: the ring of far mountains [how many, lowest, highest, colour, snow caps]; a circuit's own
+// `peaks: { at, arc }` keeps them to one side.
+const WORLDS = {
+  alpine:   { ground: '#4d6b2c', mow: ['#577a30', '#4a6828'], relief: 1,    forest: 0.6,  trees: { conifer: 1 }, bush: [0.5, 0.27, 0.45, 0.1], peaks: [30, 160, 420, 0x5f7350, true] },
+  park:     { ground: '#486a2a', mow: ['#56792f', '#496727'], relief: 0.22, forest: 0.86, trees: { broadleaf: 0.88, conifer: 0.12 }, bush: [0.7, 0.28, 0.5, 0.1], peaks: [22, 380, 760, 0x66758a, true] },
+  farmland: { ground: '#5e8236', mow: ['#638a38', '#58792f'], relief: 0.16, forest: 0.2,  trees: { broadleaf: 1 }, bush: [1, 0.26, 0.5, 0.1], fields: true },
+  heath:    { ground: '#66773a', mow: ['#6c7f3c', '#5e6f33'], relief: 0.55, forest: 0.3,  trees: { conifer: 0.55, broadleaf: 0.45 }, bush: [1.6, 0.16, 0.65, 0.17], peaks: [18, 60, 150, 0x6c7a4a, false] },
+  desert:   { ground: '#c9ae79', mow: ['#cfb580', '#c4a871'], relief: 0.32, forest: 0.07, trees: { palm: 1 }, bush: [0.9, 0.15, 0.35, 0.2], rocks: 420, peaks: [14, 50, 130, 0xb39a70, false] },
+};
 const RUNOFF = [21, 56]; // barrier distance from the centre line: along the straights, and on the outside of corners
 function buildTrack(def = CIRCUIT) {
   const c = new THREE.CatmullRomCurve3(def.pts.map(p => new THREE.Vector3(p[0], 0, p[1])), true, 'centripetal');
@@ -95,7 +109,7 @@ function buildTrack(def = CIRCUIT) {
   // turns: stretches of real cornering (tighter than 150 m radius), split where the direction changes
   let turns = 0;
   for (let i = 0, was = 0; i < N; i++) { const now = Math.abs(k[i]) > 1 / 150 ? Math.sign(k[i]) : 0; if (now && now !== was) turns++; was = now; }
-  const tr = { id: def.id, name: def.name, turns, N, L, ds, px, pz, tx, tz, k, corner, wallP, wallM, gravP, gravM, halfW: def.halfW, kerbW: def.kerbW, drs, sectors: [L / 3, 2 * L / 3] };
+  const tr = { id: def.id, name: def.name, world: def.world, city: def.city, peaks: def.peaks, turns, N, L, ds, px, pz, tx, tz, k, corner, wallP, wallM, gravP, gravM, halfW: def.halfW, kerbW: def.kerbW, drs, sectors: [L / 3, 2 * L / 3] };
   tr.rubber = new Float32Array(N).fill(RUBBER0);
   tr.locate = (x, z, hint) => locate(tr, x, z, hint);
   tr.line = racingLine(tr);
@@ -828,20 +842,37 @@ function create(canvas, opts = {}) {
   }
 
   // ground
-  const grassTex = canvasTex(512, 512, (x, w, h) => { noise(x, w, h, '#4d6b2c', 0.22, 26000, 2); }, [700, 700]);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(7000, 7000, 96, 96), new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 })); // tessellated: depth interpolated across two 7 km triangles drifted by >12 cm and swallowed the road
+  const W = WORLDS[track.world] || WORLDS.alpine, city = track.city;
+  const grassTex = canvasTex(512, 512, (x, w, h) => { noise(x, w, h, W.ground, 0.22, 26000, 2); }, [700, 700]);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(7000, 7000, 144, 144), new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1, vertexColors: true })); // tessellated: depth interpolated across two 7 km triangles drifted by >12 cm and swallowed the road
   // The circuit itself is flat (physics and every placed object assume y = 0); the land rolls once it is 90 m clear of the track.
-  const trackDist = (x, z) => { let m = 1e12; for (let i = 0; i < track.N; i += 5) { const dx = x - track.px[i], dz = z - track.pz[i], d = dx * dx + dz * dz; if (d < m) m = d; } return Math.sqrt(m); };
+  const nearest = (x, z) => { let m = 1e12, bi = 0; for (let i = 0; i < track.N; i += 5) { const dx = x - track.px[i], dz = z - track.pz[i], d = dx * dx + dz * dz; if (d < m) { m = d; bi = i; } } return [Math.sqrt(m), bi]; };
+  const trackDist = (x, z) => nearest(x, z)[0];
+  const inCity = (x, z, pad) => city && Math.hypot(x - city.x, z - city.z) < city.r + pad;
+  // patchy woodland: 0 … 1, wooded where it is below the world's `forest`
+  const wood = (x, z) => 0.5 + 0.3 * Math.sin(x * 0.0043 + 1.7) * Math.cos(z * 0.0037 - 0.4) + 0.2 * Math.sin(x * 0.0121 + z * 0.0093 + 2);
+  const hash = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
   const terrH = (x, z, dist) => {
     const m = clamp((dist - 90) / 280, 0, 1), k = m * m * (3 - 2 * m);
-    return k * (24 + 20 * Math.sin(x * 0.0041 + 1.3) * Math.cos(z * 0.0037) + 12 * Math.sin(x * 0.011 + z * 0.009) + 9 * Math.sin(z * 0.006 - x * 0.002));
+    return k * W.relief * (24 + 20 * Math.sin(x * 0.0041 + 1.3) * Math.cos(z * 0.0037) + 12 * Math.sin(x * 0.011 + z * 0.009) + 9 * Math.sin(z * 0.006 - x * 0.002));
+  };
+  // the land's colour varies: darker under the trees, paved under a town, and on farmland a patchwork of crops and plough
+  const CROPS = [[1, 1, 1], [1.5, 1.32, 0.62], [0.82, 1.02, 0.8], [1.2, 0.92, 0.62], [1.12, 1.18, 0.7], [0.9, 1.08, 1]];
+  const tint = (x, z, dist, out) => {
+    let c = 0.9 + 0.2 * hash(Math.round(x / 49), Math.round(z / 49)), g = c, b = c;
+    if (inCity(x, z, 30)) { c = 1.25; g = 1.02; b = 1.0; if (W === WORLDS.desert) { c = 0.72; g = 0.72; b = 0.8; } }
+    else if (W.fields && dist > 130) { const u = x * 0.88 + z * 0.48, v = -x * 0.48 + z * 0.88, f = CROPS[Math.floor(hash(Math.floor(u / 310), Math.floor(v / 220)) * CROPS.length)]; c *= f[0]; g *= f[1]; b *= f[2]; }
+    else if (dist > 80 && wood(x, z) < W.forest) { c *= 0.8; g *= 0.86; b *= 0.8; }
+    out[0] = c; out[1] = g; out[2] = b;
   };
   { const gp = ground.geometry.attributes.position; // plane is in XY before the mesh rotation: world x = x, world z = -y, height = z
-    for (let i = 0; i < gp.count; i++) { const x = gp.getX(i), z = -gp.getY(i); gp.setZ(i, terrH(x, z, trackDist(x, z))); }
+    const gc = new Float32Array(gp.count * 3), t3 = [0, 0, 0];
+    for (let i = 0; i < gp.count; i++) { const x = gp.getX(i), z = -gp.getY(i), d = trackDist(x, z); gp.setZ(i, terrH(x, z, d)); tint(x, z, d, t3); gc.set(t3, i * 3); }
+    ground.geometry.setAttribute('color', new THREE.BufferAttribute(gc, 3));
     ground.geometry.computeVertexNormals(); }
   ground.rotation.x = -Math.PI / 2; ground.position.y = -0.12; ground.receiveShadow = true; scene.add(ground);
   // mown stripes near the track
-  const mowTex = canvasTex(64, 256, (x, w, h) => { for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? '#577a30' : '#4a6828'; x.fillRect(0, i * 32, w, 32); } });
+  const mowTex = canvasTex(64, 256, (x, w, h) => { for (let i = 0; i < 8; i++) { x.fillStyle = W.mow[i % 2]; x.fillRect(0, i * 32, w, 32); } });
   const mow = new THREE.Mesh(ribbon(track, i => -track.wallM[i], i => track.wallP[i], -0.06, 40), new THREE.MeshStandardMaterial({ map: mowTex, roughness: 1 }));
   mow.receiveShadow = true; scene.add(mow);
 
@@ -1051,41 +1082,108 @@ function create(canvas, opts = {}) {
     });
   }
 
-  // trees + distant hills
+  // ---------------- Surroundings: trees, scrub, rocks, far mountains, a town ----------------
   const rnd = (() => { let s = 7; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
-  const treeSpots = [];
   let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
   for (let i = 0; i < track.N; i++) { minX = Math.min(minX, track.px[i]); maxX = Math.max(maxX, track.px[i]); minZ = Math.min(minZ, track.pz[i]); maxZ = Math.max(maxZ, track.pz[i]); }
-  for (let t = 0; t < 9000 && treeSpots.length < 2600; t++) {
-    const x = lerp(minX - 700, maxX + 700, rnd()), z = lerp(minZ - 700, maxZ + 700, rnd());
-    const dmin = trackDist(x, z);
-    if (dmin > RUNOFF[1] + 6 && !(Math.abs(z) < 120 && x > -200 && x < 500)) treeSpots.push([x, z, 0.7 + rnd() * 0.7, terrH(x, z, dmin) - 0.4]);
-  }
-  const trunkG = new THREE.CylinderGeometry(0.25, 0.35, 3, 5, 1, true); trunkG.translate(0, 1.5, 0);
-  // conifer crown: three stacked open cones in one geometry (15 triangles a tree, one instanced draw)
-  const crownG = new THREE.BufferGeometry();
-  {
+  // How far a spot is beyond the barrier there (negative: on the circuit's own ground). Along the start straight the pit
+  // building and the grandstands stand behind the barrier, so nothing grows within the full runoff depth.
+  let fromTrack = 0; // set by beyond(): the plain distance to the track, which the terrain height needs
+  const beyond = (x, z) => {
+    const [d, i] = nearest(x, z), side = -(x - track.px[i]) * track.tz[i] + (z - track.pz[i]) * track.tx[i], sD = i * track.ds;
+    fromTrack = d; return d - (sD < 520 || sD > track.L - 560 ? RUNOFF[1] + 6 : side > 0 ? track.wallP[i] : track.wallM[i]);
+  };
+  const mergeG = (parts) => { // several small shapes as one geometry, so a whole kind of tree is a single instanced draw
     const P = [], Nn = [], I = [];
-    for (const [r, h, y] of [[2.9, 4.6, 4.6], [2.3, 4.2, 7.4], [1.6, 3.8, 10]]) {
-      const c = new THREE.ConeGeometry(r, h, 5, 1, true); c.translate(0, y, 0); const o = P.length / 3;
-      for (const v of c.attributes.position.array) P.push(v); for (const v of c.attributes.normal.array) Nn.push(v); for (const v of c.index.array) I.push(v + o);
+    for (const g of parts) {
+      const o = P.length / 3, gp = g.attributes.position, gn = g.attributes.normal;
+      for (let i = 0; i < gp.count; i++) { P.push(gp.getX(i), gp.getY(i), gp.getZ(i)); Nn.push(gn.getX(i), gn.getY(i), gn.getZ(i)); }
+      if (g.index) for (const v of g.index.array) I.push(v + o); else for (let i = 0; i < gp.count; i++) I.push(o + i);
     }
-    crownG.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); crownG.setAttribute('normal', new THREE.Float32BufferAttribute(Nn, 3)); crownG.setIndex(I);
+    const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); out.setAttribute('normal', new THREE.Float32BufferAttribute(Nn, 3)); out.setIndex(I); return out;
+  };
+  const blob = (r, x, y, z, sy = 1) => { const g = new THREE.IcosahedronGeometry(r, 0); g.scale(1, sy, 1); g.translate(x, y, z); return g; };
+  const cyl = (r0, r1, h) => { const g = new THREE.CylinderGeometry(r0, r1, h, 5, 1, true); g.translate(0, h / 2, 0); return g; };
+  // [trunk, crown, hue from, hue range, saturation, lightness from, lightness range]
+  const FLORA = {
+    conifer: [cyl(0.25, 0.35, 3), mergeG([[2.9, 4.6, 4.6], [2.3, 4.2, 7.4], [1.6, 3.8, 10]].map(([r, h, y]) => { const c = new THREE.ConeGeometry(r, h, 5, 1, true); c.translate(0, y, 0); return c; })), 0.27, 0.08, 0.5, 0.1, 0.08],
+    broadleaf: [cyl(0.3, 0.45, 4.6), mergeG([blob(4.2, 0, 7.6, 0, 0.85), blob(3.3, 2.2, 5.8, 1.2, 0.9), blob(3.2, -2, 6, -1.5, 0.9)]), 0.23, 0.09, 0.62, 0.1, 0.09],
+    palm: [cyl(0.14, 0.24, 8), mergeG([0, 1, 2, 3, 4, 5, 6, 7].map(k => { const c = new THREE.ConeGeometry(0.5, 4.2, 3, 1, true); c.translate(0, 2.1, 0); c.rotateZ(-(Math.PI / 2 + 0.3 + (k % 2) * 0.35)); c.rotateY(k * TAU / 8); c.translate(0, 8, 0); return c; })), 0.25, 0.06, 0.55, 0.14, 0.08],
+    bush: [null, blob(1.2, 0, 0.6, 0, 0.75), W.bush[1], 0.05, W.bush[2], W.bush[3], 0.1],
+    rock: [null, blob(1, 0, 0.35, 0, 0.6), 0.09, 0.03, 0.22, 0.4, 0.16],
+  };
+  const spots = { conifer: [], broadleaf: [], palm: [], bush: [], rock: [] };
+  const kinds = Object.keys(W.trees), nTrees = Math.round(1500 + 12000 * W.forest);
+  for (let t = 0, n = 0; t < 140000 && n < nTrees; t++) {
+    const x = lerp(minX - 800, maxX + 800, rnd()), z = lerp(minZ - 800, maxZ + 800, rnd());
+    if (inCity(x, z, 25) || (wood(x, z) > W.forest && rnd() > 0.05)) continue;
+    const out = beyond(x, z); if (out < 7 || rnd() > (out < 220 ? 1 : out < 450 ? 0.5 : 0.18)) continue; // thick where it is seen from the road, thinner in the haze beyond
+    let pick = rnd(), kind = kinds[0]; for (const k of kinds) { if (pick < W.trees[k]) { kind = k; break; } pick -= W.trees[k]; }
+    spots[kind].push([x, z, 0.7 + rnd() * 0.7, terrH(x, z, fromTrack) - 0.4]); n++;
   }
-  const trunks = new THREE.InstancedMesh(trunkG, new THREE.MeshStandardMaterial({ color: 0x4a3626, roughness: 1 }), treeSpots.length);
-  const crowns = new THREE.InstancedMesh(crownG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }), treeSpots.length);
-  const m4 = new THREE.Matrix4(), col = new THREE.Color();
-  treeSpots.forEach(([x, z, s, y], i) => {
-    m4.makeRotationY(rnd() * TAU).scale(new THREE.Vector3(s, s * (0.8 + rnd() * 0.5), s)).setPosition(x, y, z);
-    trunks.setMatrixAt(i, m4); crowns.setMatrixAt(i, m4);
-    crowns.setColorAt(i, col.setHSL(0.26 + rnd() * 0.08, 0.45, 0.16 + rnd() * 0.1));
-  });
-  scene.add(trunks, crowns); // no shadows: the shadow map only covers 45 m round the car and trees stand 58 m or more from the track, but an instanced mesh is drawn whole into it
-  const hillMat = new THREE.MeshStandardMaterial({ color: 0x5f7350, roughness: 1, flatShading: true });
-  for (let i = 0; i < 26; i++) {
-    const a = i / 26 * TAU + rnd() * 0.2, R = 2300 + rnd() * 500, h = 120 + rnd() * 260;
-    const hill = new THREE.Mesh(new THREE.ConeGeometry(300 + rnd() * 300, h, 7), hillMat);
-    hill.position.set(100 + Math.cos(a) * R, h / 2 - 10, 400 + Math.sin(a) * R); scene.add(hill);
+  // scrub in a band just behind the fences, and boulders scattered wider
+  for (let t = 0, n = 0; t < 30000 && n < 1500 * W.bush[0]; t++) {
+    const x = lerp(minX - 150, maxX + 150, rnd()), z = lerp(minZ - 150, maxZ + 150, rnd()), out = beyond(x, z);
+    if (out > 4 && out < 60 && !inCity(x, z, 10)) { spots.bush.push([x, z, 0.5 + rnd() * 0.9, terrH(x, z, fromTrack) - 0.2]); n++; }
+  }
+  for (let t = 0, n = 0; t < 9000 && n < (W.rocks || 0); t++) {
+    const x = lerp(minX - 700, maxX + 700, rnd()), z = lerp(minZ - 700, maxZ + 700, rnd()), out = beyond(x, z);
+    if (out > 6 && !inCity(x, z, 10)) { spots.rock.push([x, z, 0.6 + rnd() * rnd() * 5, terrH(x, z, fromTrack) - 0.3]); n++; }
+  }
+  const flora = []; // instanced meshes, thinned on the lowest graphics level (see setQuality)
+  const m4 = new THREE.Matrix4(), col = new THREE.Color(), v3 = new THREE.Vector3();
+  for (const kind in spots) {
+    const list = spots[kind], [trunkG, crownG, h0, hr, sat, l0, lr] = FLORA[kind]; if (!list.length) continue;
+    const crowns = new THREE.InstancedMesh(crownG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: kind !== 'conifer', side: kind === 'palm' ? THREE.DoubleSide : THREE.FrontSide }), list.length);
+    const trunks = trunkG && new THREE.InstancedMesh(trunkG, new THREE.MeshStandardMaterial({ color: kind === 'palm' ? 0x7a6348 : 0x4a3626, roughness: 1 }), list.length);
+    list.forEach(([x, z, sc, y], i) => {
+      m4.makeRotationY(rnd() * TAU).scale(v3.set(sc, sc * (0.8 + rnd() * 0.5), sc)).setPosition(x, y, z);
+      crowns.setMatrixAt(i, m4); if (trunks) trunks.setMatrixAt(i, m4);
+      crowns.setColorAt(i, col.setHSL(h0 + rnd() * hr, sat, l0 + rnd() * lr));
+    });
+    // no shadows: the shadow map only covers 45 m round the car, but an instanced mesh is drawn whole into it
+    scene.add(crowns); flora.push(crowns); if (trunks) { scene.add(trunks); flora.push(trunks); }
+  }
+  // far mountains: all round, or only in the direction the circuit names
+  if (W.peaks) {
+    const [n, lo, hi, colr, snow] = W.peaks, pk = track.peaks || { at: 0, arc: TAU };
+    const hillMat = new THREE.MeshStandardMaterial({ color: colr, roughness: 1, flatShading: true }), snowMat = new THREE.MeshStandardMaterial({ color: 0xf2f5f8, roughness: 0.9, flatShading: true });
+    const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+    for (let i = 0; i < n; i++) {
+      const a = pk.at + ((i + rnd() * 0.6) / n - 0.5) * pk.arc, R = 2300 + rnd() * 600, h = lo + rnd() * (hi - lo), rad = h * (1.1 + rnd() * 0.9) + 150;
+      const hill = new THREE.Mesh(new THREE.ConeGeometry(rad, h, 7), hillMat); hill.rotation.y = rnd() * TAU;
+      hill.position.set(cx + Math.cos(a) * R, h / 2 - 10, cz + Math.sin(a) * R); scene.add(hill);
+      if (snow && h > 230) { const cap = new THREE.Mesh(new THREE.ConeGeometry(rad * 0.36, h * 0.36, 7), snowMat); cap.rotation.y = hill.rotation.y; cap.position.set(hill.position.x, h * 0.82 - 9.5, hill.position.z); scene.add(cap); }
+    }
+  }
+  // a town, a village or a far skyline: boxes on a street grid, one instanced draw per building class. The windows are one
+  // tiling texture; the shader repeats it by each building's own size, so floors stay floor-sized on a house and on a tower.
+  if (city) {
+    // [share, floors from, floors to, footprint from, to]; cell: street grid pitch; fill: share of plots built on
+    const CITY = {
+      town:    { cell: 38, fill: 0.84, turn: 0.35, cls: [[1, 3, 6, 17, 27]], walls: [0xc9ad7c, 0xbf9a68, 0xcbb894, 0xb5825c, 0xa99c84], roof: 0xc0502a, glass: '#39424d' },
+      village: { cell: 32, fill: 0.5, turn: 0.9, cls: [[1, 2, 3, 9, 15]], walls: [0xb3a27e, 0xa3906c, 0xbdb294, 0x8f7054], roof: 0x6a5a4c, glass: '#2f3840' },
+      skyline: { cell: 72, fill: 0.7, turn: 0.2, cls: [[0.72, 6, 20, 26, 44], [0.28, 30, 85, 24, 38]], walls: [0xb9c8d6, 0x9fb4c8, 0xd8dde2, 0x8fa3b5, 0xc9b79c], roof: 0x6f7780, glass: '#27445f' },
+    }[city.kind];
+    const lots = [], ct = Math.cos(CITY.turn), st = Math.sin(CITY.turn), nC = Math.ceil(city.r / CITY.cell);
+    for (let a = -nC; a <= nC; a++) for (let b = -nC; b <= nC; b++) {
+      const u = (a + (rnd() - 0.5) * 0.25) * CITY.cell, v = (b + (rnd() - 0.5) * 0.25) * CITY.cell, rr = Math.hypot(u, v) / city.r;
+      if (rr > 1 || rnd() > CITY.fill * (1.15 - 0.6 * rr)) continue; // thins out towards the edge
+      const x = city.x + u * ct - v * st, z = city.z + u * st + v * ct, d = trackDist(x, z); if (d < 150) continue;
+      let pick = rnd(), c = CITY.cls[0]; for (const k of CITY.cls) { if (pick < k[0]) { c = k; break; } pick -= k[0]; }
+      const tall = 1 - 0.55 * rr; // the middle stands highest
+      lots.push([x, terrH(x, z, d) - 3, z, lerp(c[3], c[4], rnd()), 3 + 3.2 * Math.round(lerp(c[1], c[2], rnd() * rnd()) * (c[2] > 25 ? tall : 1)), lerp(c[3], c[4], rnd())]);
+    }
+    const winTex = canvasTex(64, 64, (x, w, h) => { x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.fillStyle = CITY.glass; for (const wx of [8, 40]) x.fillRect(wx, 14, 17, 30); });
+    const wallMat2 = new THREE.MeshStandardMaterial({ map: winTex, roughness: 0.75 }), roofMat2 = new THREE.MeshStandardMaterial({ color: CITY.roof, roughness: 0.9 });
+    wallMat2.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_INSTANCING\n\tvUv *= vec2( max( 1.0, floor( length( instanceMatrix[ 0 ].xyz ) / 5.0 ) ), max( 1.0, floor( length( instanceMatrix[ 1 ].xyz ) / 3.2 ) ) );\n#endif'); };
+    const boxG = new THREE.BoxGeometry(1, 1, 1); boxG.translate(0, 0.5, 0);
+    const town = new THREE.InstancedMesh(boxG, [wallMat2, wallMat2, roofMat2, roofMat2, wallMat2, wallMat2], lots.length);
+    lots.forEach(([x, y, z, w, h, d], i) => {
+      m4.makeRotationY(-CITY.turn).scale(v3.set(w, h + 3, d)).setPosition(x, y, z); town.setMatrixAt(i, m4);
+      town.setColorAt(i, col.setHex(CITY.walls[Math.floor(rnd() * CITY.walls.length)]));
+    });
+    scene.add(town);
   }
 
   // car
@@ -1552,6 +1650,7 @@ function create(canvas, opts = {}) {
     state.quality = q = clamp(q, 0, 2);
     renderer.setPixelRatio(prFor(q));
     const size = q === 0 ? 1024 : 2048;
+    for (const f of flora) { if (!f.userData.n) f.userData.n = f.count; f.count = Math.ceil(f.userData.n * (q === 0 ? 0.5 : 1)); } // half the trees on LOW
     if (sunLight.shadow.mapSize.x !== size) { sunLight.shadow.mapSize.set(size, size); if (sunLight.shadow.map) { sunLight.shadow.map.dispose(); sunLight.shadow.map = null; } }
   }
 

@@ -199,7 +199,7 @@
   const GFX = { auto: 'AUTO', 2: 'HIGH', 1: 'MEDIUM', 0: 'LOW' };
   function menu() {
     const def = A.trackDef(setup.track), race = setup.mode === 'race', on = (v) => v ? 'ON' : 'OFF';
-    const session = [['Circuit', def.name.replace(/ (Circuit|Autodrome)$/, '').toUpperCase() + ' ›', cyc('track', A.TRACKS.map(x => x.id))], ['View', CAMS[setup.camera], cyc('camera', [0, 1, 2])],
+    const session = [['Circuit', (def.short || def.name.replace(/ (Circuit|Autodrome)$/, '')).toUpperCase() + ' ›', cyc('track', A.TRACKS.map(x => x.id))], ['View', CAMS[setup.camera], cyc('camera', [0, 1, 2])],
       ['Session', race ? 'RACE' : 'TIME TRIAL', cyc('mode', ['tt', 'race'])]];
     if (race) session.push(['Race length', setup.laps + ' LAPS', cyc('laps', [3, 5, 10])], ['AI skill', setup.skill.toUpperCase(), cyc('skill', ['rookie', 'pro', 'elite'])]);
     const car = [['Tyres', setup.compound.toUpperCase(), cyc('compound', ['soft', 'medium', 'hard'])], ['Traction control', on(setup.tc), cyc('tc', [true, false])], ['Anti-lock brakes', on(setup.abs), cyc('abs', [true, false])],
