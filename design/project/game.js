@@ -30,6 +30,7 @@ for (const t of TRACKS) { t.halfW = 6.5; t.kerbW = 1.2; }
 const CIRCUIT = TRACKS[0];
 const trackDef = (id) => TRACKS.find(t => t.id === id) || CIRCUIT;
 
+const RUNOFF = [21, 56]; // barrier distance from the centre line: along the straights, and on the outside of corners
 function buildTrack(def = CIRCUIT) {
   const c = new THREE.CatmullRomCurve3(def.pts.map(p => new THREE.Vector3(p[0], 0, p[1])), true, 'centripetal');
   c.arcLengthDivisions = 4000; // the default 200 left the '2 m' samples up to 40% unevenly spaced, which skewed distances
@@ -52,21 +53,36 @@ function buildTrack(def = CIRCUIT) {
   k = smooth(k, 6);
   const corner = new Uint8Array(N);
   for (let i = 0; i < N; i++) if (Math.abs(k[i]) > 1 / 280) for (let j = -10; j <= 10; j++) corner[(i + j + N) % N] = 1;
-  // runoff: barrier further out on the outside of corners, gravel there
+  // runoff: a grass verge along the straights, and on the outside of corners a deep trap before the barrier
   let wallP = new Float32Array(N), wallM = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     const big = Math.abs(k[i]) > 1 / 250;
-    wallP[i] = big && k[i] < 0 ? 36 : 17;   // outside of a left-hander is +n
-    wallM[i] = big && k[i] > 0 ? 36 : 17;
+    wallP[i] = big && k[i] < 0 ? RUNOFF[1] : RUNOFF[0];   // outside of a left-hander is +n
+    wallM[i] = big && k[i] > 0 ? RUNOFF[1] : RUNOFF[0];
   }
-  wallP = smooth(wallP, 20); wallM = smooth(wallM, 20);
+  wallP = smooth(wallP, 30); wallM = smooth(wallM, 30);
+  // where another part of the circuit runs alongside, the two share the ground between them: each barrier stops 4 m short of halfway
+  for (let i = 0; i < N; i++) for (let j = i + 16; j < N; j++) {
+    if (N - j + i < 16) break;
+    const dx = px[j] - px[i], dz = pz[j] - pz[i], d2 = dx * dx + dz * dz; if (d2 > 4 * RUNOFF[1] * RUNOFF[1]) continue;
+    const cap = Math.max(Math.sqrt(d2) / 2 - 4, 9), sI = dz * tx[i] - dx * tz[i], sJ = dx * tz[j] - dz * tx[j]; // which side of each the other lies on
+    // only when the other really is abeam (more to the side than ahead or behind), not just further round the same bend
+    if (Math.abs(sI) > Math.abs(dx * tx[i] + dz * tz[i])) { if (sI > 0) wallP[i] = Math.min(wallP[i], cap); else wallM[i] = Math.min(wallM[i], cap); }
+    if (Math.abs(sJ) > Math.abs(dx * tx[j] + dz * tz[j])) { if (sJ > 0) wallP[j] = Math.min(wallP[j], cap); else wallM[j] = Math.min(wallM[j], cap); }
+  }
+  // traps: 1 gravel on the outside of quick corners, 2 sand at the slow ones (hairpins and chicanes)
   const gravP = new Uint8Array(N), gravM = new Uint8Array(N);
+  let slow = new Float32Array(N); for (let i = 0; i < N; i++) slow[i] = Math.abs(k[i]) > 1 / 45 ? 1 : 0;
+  slow = smooth(slow, 40);
   for (let i = 0; i < N; i++) {
-    gravP[i] = wallP[i] > 26 ? 1 : 0; gravM[i] = wallM[i] > 26 ? 1 : 0;
+    const kind = slow[i] > 0.12 ? 2 : 1;
+    gravP[i] = wallP[i] > RUNOFF[0] + 9 ? kind : 0; gravM[i] = wallM[i] > RUNOFF[0] + 9 ? kind : 0;
     // never let an offset curve fold over itself on the inside of a tight corner
     const r = 1 / Math.max(Math.abs(k[i]), 1e-6);
     if (k[i] > 0) wallP[i] = Math.min(wallP[i], 0.8 * r); else wallM[i] = Math.min(wallM[i], 0.8 * r);
   }
+  // those limits leave steps in the barrier line: round them off, only ever moving the barrier inwards
+  for (const w of [wallP, wallM]) for (let n = 0; n < 4; n++) { const sm = smooth(w, 5); for (let i = 0; i < N; i++) w[i] = Math.min(w[i], sm[i]); }
   // DRS zones: the two longest straights (from 60 m after corner exit to 80 m before next corner)
   const runs = [];
   for (let i = 0; i < N; i++) {
@@ -178,14 +194,19 @@ const RUBBER0 = 0.4; // how rubbered-in the line is when a session starts (0 gre
 const SURF = {
   asphalt: { mu: 1.0, drag: 0.012 },
   kerb:    { mu: 0.92, drag: 0.016 },
-  grass:   { mu: 0.52, drag: 0.07 },
-  gravel:  { mu: 0.42, drag: 0.42 },
+  // Off the road. dragV: the faster a wheel ploughs through a loose surface the harder it is held back, so a trap stops a
+  // car arriving at speed but lets one crawl out again. bump: how much the wheel loads jump about.
+  grass:   { mu: 0.55, drag: 0.06, dragV: 0,     bump: 0.12 },
+  gravel:  { mu: 0.50, drag: 0.13, dragV: 0.012, bump: 0.2 },
+  sand:    { mu: 0.44, drag: 0.16, dragV: 0.007, bump: 0.1 },
 };
+const LOOSE = { grass: 1, gravel: 1, sand: 1 };
 function surfaceAt(tr, i, d) {
   const ad = Math.abs(d), plus = d > 0;
   if (ad <= tr.halfW) return 'asphalt';
   if (tr.corner[i] && ad <= tr.halfW + tr.kerbW) return 'kerb';
-  if ((plus ? tr.gravP[i] : tr.gravM[i]) && ad > tr.halfW + 3) return 'gravel';
+  const trap = plus ? tr.gravP[i] : tr.gravM[i];
+  if (trap && ad > tr.halfW + 3) return trap === 2 ? 'sand' : 'gravel';
   return 'grass';
 }
 
@@ -309,7 +330,7 @@ class Sim {
     // --- aero ---
     const { clF, clR, cdA } = aeroCoeffs(set, this.drsOpen);
     const q = 0.5 * RHO * v * v;
-    let offFloor = 0; for (let w = 0; w < 4; w++) if (this.surf[w] === 'grass' || this.surf[w] === 'gravel') offFloor++;
+    let offFloor = 0; for (let w = 0; w < 4; w++) if (LOOSE[this.surf[w]]) offFloor++;
     const floorK = 1 - offFloor * 0.05;
     // slipstream: a car in another's wake has less drag, and less downforce (most of it off the front wing)
     const tow = this.tow;
@@ -324,6 +345,7 @@ class Sim {
       let f = m * G * (front ? c.b : c.a) / c.wb / 2 + (front ? dfF : dfR) / 2 + (front ? -lonT : lonT) / 2;
       f += (YW[w] > 0 ? -1 : 1) * latT * (front ? 0.5 : 0.5);
       if (this.surf[w] === 'kerb') f *= 1 + 0.22 * Math.sin(this.s * TAU / 1.5 + w); // 1.5 m kerb teeth
+      else if (LOOSE[this.surf[w]]) f *= 1 + SURF[this.surf[w]].bump * Math.sin(this.x * 1.9 + w * 2.1) * Math.sin(this.z * 2.3 + w); // rough ground
       Fz[w] = Math.max(f, 0);
     }
 
@@ -397,7 +419,7 @@ class Sim {
         else if (!braking && Math.abs(vx) > 0.5) { fx = Math.sign(fxd) * Fmax * 0.8; latK = 0.22; this.spin[w] = 1; }
         else { fx = Math.sign(fxd) * Fmax; latK = 0; }
       } else latK = Math.sqrt(1 - ratio * ratio);
-      fx -= Math.sign(vx) * Math.min(Math.abs(vx), 1) * surf.drag * Fz[w];
+      fx -= Math.sign(vx) * Math.min(Math.abs(vx), 1) * Math.min(surf.drag + (surf.dragV || 0) * Math.abs(vx), 0.6) * Fz[w];
       const fy = -pacejka(this.alpha[w]) * Fmax * latK;
       slipMax = Math.max(slipMax, Math.abs(this.alpha[w]) / 0.09, this.lock[w] * 1.5, this.spin[w] * 1.5);
 
@@ -752,7 +774,7 @@ class Audio {
     const v = sim.speed, surf = sim.surf;
     set(this.squeal.gain, sim.speed > 6 ? clamp((sim.slipMax - 0.85) * 0.25, 0, 0.18) : 0, 0.05);
     set(this.wind.gain, Math.min(0.35, v * v / 9000 * 0.4) * (inside ? 1.5 : 1), 0.1);
-    const onKerb = surf.some(s => s === 'kerb'), off = surf.some(s => s === 'gravel' || s === 'grass');
+    const onKerb = surf.some(s => s === 'kerb'), off = surf.some(s => LOOSE[s]);
     set(this.rumble.gain, onKerb && v > 3 ? 0.9 : 0, 0.02);
     set(this.gravel.gain, off && v > 3 ? 0.12 : 0, 0.05);
     if (sim.impact > 2) { this.hit.gain.cancelScheduledValues(t); this.hit.gain.setValueAtTime(Math.min(2, sim.impact / 8), t); this.hit.gain.setTargetAtTime(0, t, 0.15); }
@@ -841,10 +863,15 @@ function create(canvas, opts = {}) {
     const k = new THREE.Mesh(ribbon(track, () => sgn * hw, () => sgn * (hw + track.kerbW), 0.03, 3, i => track.corner[i]), kerbMat);
     k.receiveShadow = true; scene.add(k);
   }
-  const gravelTex = canvasTex(256, 256, (x, w, h) => noise(x, w, h, '#b5a184', 0.35, 30000, 2));
+  const gravelTex = canvasTex(256, 256, (x, w, h) => noise(x, w, h, '#a29b8f', 0.35, 30000, 2));
   const gravelMat = new THREE.MeshStandardMaterial({ map: gravelTex, roughness: 1 });
-  scene.add(new THREE.Mesh(ribbon(track, i => hw + 3, i => track.wallP[i] - 3, 0.005, 12, i => track.gravP[i]), gravelMat));
-  scene.add(new THREE.Mesh(ribbon(track, i => -(hw + 3), i => -(track.wallM[i] - 3), 0.005, 12, i => track.gravM[i]), gravelMat));
+  const sandTex = canvasTex(256, 256, (x, w, h) => noise(x, w, h, '#d9c08a', 0.16, 30000, 2));
+  const sandMat = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 1 });
+  for (const [kind, mat] of [[1, gravelMat], [2, sandMat]]) {
+    const pm = new THREE.Mesh(ribbon(track, i => hw + 3, i => track.wallP[i] - 3, 0.005, 12, i => track.gravP[i] === kind), mat);
+    const mm = new THREE.Mesh(ribbon(track, i => -(hw + 3), i => -(track.wallM[i] - 3), 0.005, 12, i => track.gravM[i] === kind), mat);
+    pm.receiveShadow = mm.receiveShadow = true; scene.add(pm, mm);
+  }
   // racing line: red = braking zone, yellow = lift/turn-in, green = flat out. Within 300 m it reacts to your speed:
   // carry too much and red starts earlier; arrive slow and the zone softens to yellow.
   const RL = track.line;
@@ -1012,7 +1039,7 @@ function create(canvas, opts = {}) {
     const slots = brands.map(() => []);
     for (const sgn of [1, -1]) for (let i = 3, n = 0; i < N; i += 7) {
       const wall = sgn > 0 ? track.wallP[i] : track.wallM[i];
-      if (track.corner[i] || track.corner[(i + 6) % N] || track.corner[(i - 6 + N) % N] || wall > 18) continue;
+      if (track.corner[i] || track.corner[(i + 6) % N] || track.corner[(i - 6 + N) % N] || wall > RUNOFF[0] + 1) continue;
       slots[(n++ + (sgn > 0 ? 0 : 2)) % brands.length].push([i, sgn * (wall + 0.15), -Math.atan2(track.tz[i], track.tx[i]) + (sgn > 0 ? Math.PI : 0)]);
     }
     const adG = new THREE.PlaneGeometry(13, 1.15);
@@ -1032,7 +1059,7 @@ function create(canvas, opts = {}) {
   for (let t = 0; t < 9000 && treeSpots.length < 2600; t++) {
     const x = lerp(minX - 700, maxX + 700, rnd()), z = lerp(minZ - 700, maxZ + 700, rnd());
     const dmin = trackDist(x, z);
-    if (dmin > 58 && !(Math.abs(z) < 120 && x > -200 && x < 500)) treeSpots.push([x, z, 0.7 + rnd() * 0.7, terrH(x, z, dmin) - 0.4]);
+    if (dmin > RUNOFF[1] + 6 && !(Math.abs(z) < 120 && x > -200 && x < 500)) treeSpots.push([x, z, 0.7 + rnd() * 0.7, terrH(x, z, dmin) - 0.4]);
   }
   const trunkG = new THREE.CylinderGeometry(0.25, 0.35, 3, 5, 1, true); trunkG.translate(0, 1.5, 0);
   // conifer crown: three stacked open cones in one geometry (15 triangles a tree, one instanced draw)
@@ -1341,7 +1368,8 @@ function create(canvas, opts = {}) {
   function poseCar(group, whs, s, dtF) {
     const roll = clamp(s.ay / G * 0.006, -0.025, 0.025);
     // drawn where the car is now, not at the last 240 Hz step: the leftover time varies frame to frame and showed as judder at speed
-    group.position.set(s.x + s.vx * acc, s.surf.indexOf('kerb') >= 0 && s.speed > 5 ? Math.random() * 0.02 : 0, s.z + s.vz * acc);
+    const rough = s.speed < 5 ? 0 : s.surf.some(n => LOOSE[n]) ? 0.035 : s.surf.indexOf('kerb') >= 0 ? 0.02 : 0; // the body jiggles over kerbs and rough ground
+    group.position.set(s.x + s.vx * acc, Math.random() * rough, s.z + s.vz * acc);
     group.rotation.set(roll, -s.psi, clamp(-s.ax / G * 0.006, -0.02, 0.02));
     const vxCar = s.vx * Math.cos(s.psi) + s.vz * Math.sin(s.psi);
     for (const wh of whs) {
@@ -1635,7 +1663,7 @@ function create(canvas, opts = {}) {
     if (state.phase === 'run' && sim.speed > 4) {
       const cf = Math.cos(sim.psi), sf = Math.sin(sim.psi);
       for (let w = 0; w < 4; w++) {
-        const sliding = sim.lock[w] || sim.spin[w] || Math.abs(sim.alpha[w]) > 0.16;
+        const sliding = sim.lock[w] || sim.spin[w] || Math.abs(sim.alpha[w]) > 0.16 || sim.surf[w] === 'gravel' || sim.surf[w] === 'sand'; // loose surfaces throw up dust
         if (!sliding || Math.random() > 0.7) continue;
         const k = smokeIdx++ % smokeN;
         smokePos[k * 3] = sim.x + cf * XW[w] - sf * YW[w]; smokePos[k * 3 + 1] = 0.3; smokePos[k * 3 + 2] = sim.z + sf * XW[w] + cf * YW[w];

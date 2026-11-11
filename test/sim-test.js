@@ -94,6 +94,14 @@ assert(wet.best - light.best > 4 && wet.best - light.best < 25, 'rain costs seve
   }
   console.log('stability: worst sideslip', (worst * 57.3).toFixed(1), 'deg');
 }
+// --- runoff: a trap stops a car that arrives at speed, and the car can drive out of it again ---
+{
+  let i0 = 0; while (!(track.gravP[i0] === 1 && track.wallP[i0] > 50)) i0++;
+  const inTrap = (v0, thr) => { const c = new Sim(track, {}); c.placeAt(i0 * track.ds, 30); c.vx = v0 * Math.cos(c.psi); c.vz = v0 * Math.sin(c.psi); c.gear = v0 ? 5 : 1; let d = 0; for (let n = 0; n < 240 * 5; n++) { c.step(DT, { analog: false, steer: 0, throttle: thr, brake: 0 }); d += c.speed * DT; if (v0 && c.speed < 5) break; } return [c.speed, d, c.surf[0]]; };
+  const [, stop] = inTrap(55, 0), [vOut, , surf] = inTrap(0, 1);
+  console.log('gravel: coasting in at 198 km/h is down to walking pace in', stop.toFixed(0), 'm; from rest, 5 s of throttle reaches', (vOut * 3.6).toFixed(0), 'km/h on', surf);
+  assert(stop < 110, 'gravel stops a car'); assert(vOut > 8, 'a car is not stuck in the gravel');
+}
 // --- every circuit: the autopilot laps it cleanly, sections keep their distance (scenery and runoff need the room), DRS zones are sane ---
 for (const def of TRACKS) {
   const tr = buildTrack(def), c = new Sim(tr, {}); let tt = 0, hit = 0, near = 1e9;
