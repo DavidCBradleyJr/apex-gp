@@ -333,7 +333,8 @@ class Component extends DCLogic {
   constructor(props) {
     super(props);
     this.state = { t: null, setup: { compound: 'soft', frontWing: 6, rearWing: 6, brakeBias: 57, tc: true, abs: true, autoGear: true, time: 'afternoon', line: 'full', ghost: true, mode: 'tt', laps: 3, skill: 'pro', track: 'kestrel', camera: 0 }, map: null, error: '' };
-    this.game = null; this.root = null;
+    this.game = null; this.root = null; this.mapOn = false;
+    this.toggleMap = () => { this.mapOn = !this.mapOn; if (this.game) this.game.overview(this.mapOn, 0.16); this.forceUpdate ? this.forceUpdate() : this.setState({}); };
     this.setRoot = (el) => { this.root = el; };
     this.setCanvas = (el) => {
       if (!el || this.game) return;
@@ -345,11 +346,13 @@ class Component extends DCLogic {
       if (this.game) { this.game.destroy(); this.game = null; }
       try {
         this.game = window.ApexGP.create(this.canvas, { track, onTelemetry: (t) => this.setState({ t }) });
+        this.game.overview(this.mapOn, 0.16);
         this.setState({ t: null, map: this.buildMap(this.game.track) });
       } catch (e) { this.setState({ error: 'WebGL unavailable: ' + e.message }); }
     };
     this.nextTrack = () => {
       const ids = window.ApexGP.TRACKS.map(t => t.id), track = ids[(ids.indexOf(this.state.setup.track) + 1) % ids.length];
+      this.mapOn = true; // a new circuit opens on its 3D map
       this.setState({ setup: Object.assign({}, this.state.setup, { track }) }); this.load(track);
     };
     this.onKeyDown = (e) => {
@@ -458,7 +461,7 @@ class Component extends DCLogic {
     const raceOpts = [{ label: 'Race length', state: setup.laps + ' LAPS', flip: cyc('laps', [3, 5, 10]) }, { label: 'AI skill', state: setup.skill.toUpperCase(), flip: cyc('skill', ['rookie', 'pro', 'elite']) }];
     const tr = this.game ? this.game.track : null, def = window.ApexGP ? window.ApexGP.trackDef(setup.track) : { name: '', note: '' };
     const CAM_LABEL = ['CHASE', 'T-CAM', 'COCKPIT'];
-    const sessionOpts = [{ label: 'Circuit', state: def.name.replace(/ (Circuit|Autodrome)$/, '').toUpperCase() + ' ›', flip: this.nextTrack }, { label: 'View', state: CAM_LABEL[setup.camera], flip: cyc('camera', [0, 1, 2]) }];
+    const sessionOpts = [{ label: 'Circuit', state: def.name.replace(/ (Circuit|Autodrome)$/, '').toUpperCase() + ' ›', flip: this.nextTrack }, { label: 'View', state: CAM_LABEL[setup.camera], flip: cyc('camera', [0, 1, 2]) }, { label: 'Menu shows', state: this.mapOn ? 'CIRCUIT MAP' : 'THE CAR', flip: this.toggleMap }];
     const trackLine = tr ? tr.name + ' · ' + (tr.L / 1000).toFixed(3) + ' km · ' + tr.turns + ' turns' : '';
     const hueCol = (h) => 'hsl(' + ((22 + h) % 360) + ' 85% 60%)';
     const raceBest = race ? race.cars.reduce((m, c) => c.best && c.best < m ? c.best : m, '9') : '';
@@ -492,7 +495,7 @@ class Component extends DCLogic {
     return {
       accent, t, setup, compounds, toggles, aeroNote, compoundNote: notes[setup.compound],
       isMenu: phase === 'menu', isDriving: phase === 'run' || phase === 'lights' || phase === 'paused' || phase === 'finished',
-      modes, isRaceSetup, raceOpts, sessionOpts, trackLine, trackNote: def.note + '. Cockpit is the first-person view; C changes view while driving.', isRace: !!race, tower, mapDots, isFinished: phase === 'finished' && !!race,
+      modes, isRaceSetup, raceOpts, sessionOpts, trackLine, trackNote: def.note + '. On the map: sectors in red, blue and yellow, DRS zones in green. C changes view while driving.', isRace: !!race, tower, mapDots, isFinished: phase === 'finished' && !!race,
       modeLine: (isRaceSetup ? 'RACE · ' + setup.laps + ' LAPS · 6 CARS' : 'TIME TRIAL') + ' · DRY · 26°C',
       resultTitle: race ? 'P' + race.pos + ' OF ' + race.n : '', resultLaps: race ? race.laps + ' LAPS' : '', isLights: phase === 'lights', isPaused: phase === 'paused',
       status: this.state.error || (this.game ? 'Circuit loaded. Press Enter or Go to grid.' : 'Loading circuit…'),

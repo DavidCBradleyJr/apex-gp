@@ -71,6 +71,9 @@ You're taking over **Apex GP**, a browser F1 time-trial simulator I'm building. 
   - cut radii of 84 / 88 took slivers of bodywork beside each wheel, which span with it (now 82 / 86);
   - the rear tread starts at z = 97 mm but the cut started at 125, so the inner 16 cm of the tyre stayed on the body while the rest span (the tyre band now has its own inner z);
   - in the cockpit the model's front wheel shells span over the rig's own tyres (they are hidden for that render now).
+- **Graphics auto-detect:** `create(canvas, { quality })` takes `'auto'` (default) or 0 / 1 / 2. Auto starts at 2 and times 60 menu frames once the car has loaded (skipping the first 20); under 48 fps it steps down and times again. A software renderer (Swiftshader, llvmpipe) goes straight to 0, so the headless pose script passes `quality: 2` (`&q=` overrides). A hand-picked level (menu or the B key) is never changed. It cannot see headroom above the display's refresh rate, and it does not step back up.
+- **Menu 3D circuit map:** `game.overview(on, shift)` shows `mapGroup` (the track as a 30 m band in sector colours, DRS in green, a post at the line) from an orbiting camera. `shift` slides the circuit sideways to clear the menu panel. At radius 0.78 of the circuit's size the track ran off screen; 1.05 fits.
+- **Web page quality of life (`src/index.html` only):** settings saved in `localStorage` (`apexgp.settings.v1`), graphics and km/h / mph options, fullscreen (F), restart and race-again buttons, clear best lap, loading and graphics status, best lap shown in the menu, the view picked with C is remembered. The canvas got only the map toggle.
 - **Scenery:** the dark rubber groove is two transparent ribbons on the racing line at y 0.006 and 0.008; tree crowns are three cones merged into one instanced geometry.
 - **Physics tuning lessons:**
   - Tyre heat coefficients: 0.2 heating / 6 cooling. 0.12 left tyres cold and slow; 0.3 overheated them.

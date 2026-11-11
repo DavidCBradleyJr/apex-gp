@@ -821,6 +821,23 @@ function create(canvas, opts = {}) {
   // rubber laid on the racing line: a dark groove with a darker core, as on any circuit that has been driven on
   const grooveMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.16, depthWrite: false });
   for (const [w, y] of [[1.7, 0.006], [0.9, 0.008]]) { const gm = new THREE.Mesh(ribbon(track, i => RL.off[i] - w, i => RL.off[i] + w, y, 4), grooveMat); gm.renderOrder = 0.5; scene.add(gm); }
+  // 3D circuit map for the menu: the track drawn as a wide lit band in sector colours (S1 red, S2 blue, S3 yellow) with DRS zones in
+  // green along its edge, seen from an orbiting helicopter view. Hidden everywhere else.
+  const mapGroup = new THREE.Group(); mapGroup.visible = false; scene.add(mapGroup);
+  let mapC = null;
+  {
+    const N = track.N, col = new Float32Array((N + 1) * 6), SEC = [[1, 0.16, 0.12], [0.2, 0.5, 1], [1, 0.8, 0.1]];
+    for (let ii = 0; ii <= N; ii++) { const sD = (ii % N) * track.ds, c = SEC[sD < track.sectors[0] ? 0 : sD < track.sectors[1] ? 1 : 2]; for (let k = 0; k < 2; k++) col.set(c, ii * 6 + k * 3); }
+    const band = ribbon(track, () => -15, () => 15, 6, 4); band.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const flat = (o) => new THREE.MeshBasicMaterial(Object.assign({ toneMapped: false, fog: false, side: THREE.DoubleSide }, o));
+    mapGroup.add(new THREE.Mesh(band, flat({ vertexColors: true })));
+    const inDrs = (i) => { const sD = i * track.ds; return track.drs.some(([a, b]) => a < b ? sD > a && sD < b : sD > a || sD < b); };
+    mapGroup.add(new THREE.Mesh(ribbon(track, () => 19, () => 27, 6, 4, inDrs), flat({ color: 0x2bd96b })));
+    const flag = new THREE.Mesh(new THREE.BoxGeometry(10, 70, 10), flat({ color: 0xffffff })); flag.position.set(track.px[0], 41, track.pz[0]); mapGroup.add(flag);
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (let i = 0; i < N; i++) { x0 = Math.min(x0, track.px[i]); x1 = Math.max(x1, track.px[i]); z0 = Math.min(z0, track.pz[i]); z1 = Math.max(z1, track.pz[i]); }
+    mapC = { x: (x0 + x1) / 2, z: (z0 + z1) / 2, e: Math.max(x1 - x0, z1 - z0) };
+  }
   const lineGeo = ribbon(track, i => RL.off[i] - 0.38, i => RL.off[i] + 0.38, 0.012, 4);
   const lineCol = new Float32Array((track.N + 1) * 8);
   lineGeo.setAttribute('color', new THREE.BufferAttribute(lineCol, 4));
@@ -1227,8 +1244,9 @@ function create(canvas, opts = {}) {
     g.fillStyle = '#000'; g.fillRect(4, 38, W - 8, H - 42); g.strokeStyle = '#30343c'; g.lineWidth = 3; g.strokeRect(4, 38, W - 8, H - 42);
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
     g.font = '800 132px "Barlow Condensed", Arial, sans-serif'; g.fillText(s.gear === -1 ? 'R' : s.gear === 0 ? 'N' : String(s.gear), 192, 132);
-    g.font = '700 52px "Barlow Condensed", Arial, sans-serif'; g.fillText(String(Math.round(s.speed * 3.6)), 70, 106);
-    g.font = '600 16px Arial, sans-serif'; g.fillStyle = '#8b93a0'; g.fillText('KM/H', 70, 142); g.fillText('LAP ' + Math.max(1, s.lap), 314, 64);
+    const mph = s.setup.units === 'mph';
+    g.font = '700 52px "Barlow Condensed", Arial, sans-serif'; g.fillText(String(Math.round(s.speed * (mph ? 2.237 : 3.6))), 70, 106);
+    g.font = '600 16px Arial, sans-serif'; g.fillStyle = '#8b93a0'; g.fillText(mph ? 'MPH' : 'KM/H', 70, 142); g.fillText('LAP ' + Math.max(1, s.lap), 314, 64);
     g.fillText(Math.round(s.tyreT[0]) + '°  ' + Math.round(s.tyreT[1]) + '°', 70, 64);
     const d = s.delta();
     g.font = '700 38px "Barlow Condensed", Arial, sans-serif'; g.fillStyle = d === null ? '#8b93a0' : d <= 0 ? '#2bd96b' : '#ff5a4f';
@@ -1457,7 +1475,20 @@ function create(canvas, opts = {}) {
   // megapixels through 4x MSAA and bloom. 3.7 MP is 2560x1440.
   const PIXELS = [1.2e6, 2.2e6, 3.7e6];
   const prFor = (q) => clamp(Math.sqrt(PIXELS[q] / ((canvas.clientWidth || 1) * (canvas.clientHeight || 1))), 0.5, Math.min(window.devicePixelRatio || 1, 2));
-  let slowN = 0, frameN = 0;
+  // Graphics mode: 'auto' (default) starts at the top level and times the menu's own frames once the car has loaded; under 48 fps it
+  // steps down and times again, so a slow machine is settled about a second after loading. A software renderer goes straight to the
+  // bottom. A level chosen by hand is kept and never changed.
+  let slowN = 0, frameN = 0, gfxAuto = opts.quality === undefined || opts.quality === 'auto', bench = gfxAuto ? { n: 0, ms: 0 } : null;
+  let gpuName = '';
+  try { const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info'); gpuName = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : ''); } catch (e) { /* not exposed */ }
+  function benchStep(ms) {
+    if (!bench || !carReady || ms > 250 || ms <= 0) return; // hidden tab or a hitch: not a measurement
+    if (++bench.n <= 20) return; // let shaders compile and the model upload first
+    bench.ms += ms;
+    if (bench.n < 80) return;
+    const f = 60000 / bench.ms;
+    if (f < 48 && state.quality > 0) { setQuality(state.quality - 1); bench = { n: 0, ms: 0 }; } else bench = null;
+  }
   function setQuality(q) {
     state.quality = q = clamp(q, 0, 2);
     renderer.setPixelRatio(prFor(q));
@@ -1469,7 +1500,7 @@ function create(canvas, opts = {}) {
     if (e === 'pause') { if (state.phase === 'run' || state.phase === 'lights') { state.phase = 'paused'; } else if (state.phase === 'paused') { state.phase = 'run'; state.tel = false; } else state.tel = false; return; }
     if (e === 'tel') { showTel(!state.tel); return; }
     if (e === 'ghost') { state.ghost = !state.ghost; return; }
-    if (e === 'fx') { setQuality(state.quality === 2 ? 1 : 2); sim.flash(state.quality === 2 ? 'EFFECTS HIGH' : 'EFFECTS LOW', 1.5); return; }
+    if (e === 'fx') { gfxAuto = false; bench = null; setQuality(state.quality === 0 ? 2 : state.quality - 1); sim.flash('GRAPHICS ' + ['LOW', 'MEDIUM', 'HIGH'][state.quality], 1.5); return; }
     if (e === 'mute') { audio.muted = !audio.muted; return; }
     if (e === 'line') { state.lineMode = (state.lineMode + 1) % LINE_MODES.length; return; }
     if (e === 'cam') { state.camMode = (state.camMode + 1) % CAMS.length; return; }
@@ -1496,6 +1527,7 @@ function create(canvas, opts = {}) {
     raf = requestAnimationFrame(frame);
     resize();
     if (now > last) fps += (1000 / (now - last) - fps) * 0.05;
+    benchStep(now - last);
     const dtF = clamp((now - last) / 1000, 0, 0.05); last = now;
     const padIn = readPad();
     while (edges.length) handleEdge(edges.shift());
@@ -1593,6 +1625,12 @@ function create(canvas, opts = {}) {
     let fov = 62;
     shake = sim.surf.some(s => s !== 'asphalt') && sim.speed > 5 ? 0.04 : sim.speed / 95 * 0.006;
     rig.visible = false;
+    mapGroup.visible = state.phase === 'menu' && state.map && !state.poseCam;
+    if (mapGroup.visible) {
+      const a = orbit * 1.6 + 0.9, e = mapC.e;
+      camera.position.set(mapC.x + Math.cos(a) * e * 1.05, e * 0.72, mapC.z + Math.sin(a) * e * 1.05); camera.lookAt(mapC.x, 0, mapC.z);
+      camera.translateX(-e * (state.mapShift || 0)); fov = 42; // shifted so the circuit sits clear of a menu on the left
+    } else
     if (state.phase === 'menu' || state.poseCam) { // poseCam {a, r, h}: a fixed view around the car, for screenshots
       const pc = state.poseCam, a = pc ? sim.psi + pc.a : orbit, r = pc ? pc.r : 9;
       camPos.set(sim.x + Math.cos(a) * r, pc ? pc.h : 1.6 + Math.sin(orbit * 0.7) * 0.4, sim.z + Math.sin(a) * r);
@@ -1632,7 +1670,7 @@ function create(canvas, opts = {}) {
     if (hideBody) { for (const b of bodyMeshes) b.o.geometry = NO_GEO; for (const wh of wheels) if (wh.w < 2) wh.steer.visible = false; }
     if (composer && state.quality === 2) composer.render(); else renderer.render(scene, camera);
     if (hideBody) { for (const b of bodyMeshes) b.o.geometry = b.geo; for (const wh of wheels) wh.steer.visible = true; }
-    if (state.phase === 'run' && ++frameN && dtF > 1 / 40 && ++slowN > 110 && state.quality > 0) { setQuality(state.quality - 1); sim.flash('EFFECTS REDUCED FOR FRAME RATE', 2.5); frameN = slowN = 0; }
+    if (gfxAuto && state.phase === 'run' && ++frameN && dtF > 1 / 40 && ++slowN > 110 && state.quality > 0) { setQuality(state.quality - 1); sim.flash('EFFECTS REDUCED FOR FRAME RATE', 2.5); frameN = slowN = 0; }
     if (frameN >= 180) frameN = slowN = 0; // 110 of 180 frames under 40 fps trips it
     let near = null;
     if (race) { // nearest rival to the camera, for its engine note
@@ -1686,10 +1724,11 @@ function create(canvas, opts = {}) {
       mapX: s.x, mapZ: s.z, progress: s.s / L,
       camera: CAMS[state.camMode], message: s.messageT > 0 ? s.message : '', surface: s.surf[0],
       laps: s.lapsDone.slice(-5).reverse().map(l => ({ lap: l.lap, time: fmtTime(l.time), valid: l.valid })),
-      muted: !!audio.muted, fps: Math.round(fps), fxq: state.quality, tel: state.tel, ghost: state.ghost, lapsDone: s.lapsDone.length, line: LINE_MODES[state.lineMode], gearbox: s.setup.autoGear ? 'AUTO' : 'MANUAL',
+      muted: !!audio.muted, fps: Math.round(fps), fxq: state.quality, fxAuto: gfxAuto, fxBusy: !!bench, ready: carReady, map: !!state.map, tel: state.tel, ghost: state.ghost, lapsDone: s.lapsDone.length, line: LINE_MODES[state.lineMode], gearbox: s.setup.autoGear ? 'AUTO' : 'MANUAL',
     };
   }
 
+  if (/swiftshader|llvmpipe|software/i.test(gpuName) && gfxAuto) { bench = null; setQuality(0); } else if (!gfxAuto) setQuality(+opts.quality);
   raf = requestAnimationFrame(frame);
   return {
     track, sim, CAMS, state, renderer, scene, get race() { return race; },
@@ -1723,6 +1762,10 @@ function create(canvas, opts = {}) {
     pause() { if (state.phase === 'run' || state.phase === 'lights') state.phase = 'paused'; },
     menu() { state.phase = 'menu'; state.tel = false; endRace(); sim.placeAt(track.L - 16, -2.5); },
     camera(i) { state.camMode = i; },
+    // 'auto' or 0 / 1 / 2 (low / medium / high)
+    graphics(mode) { gfxAuto = mode === 'auto'; if (gfxAuto) { setQuality(2); bench = { n: 0, ms: 0 }; } else { bench = null; setQuality(+mode); } },
+    // the menu's 3D circuit map; shift moves the circuit sideways on screen (fraction of its size) to clear a menu panel
+    overview(on, shift) { state.map = !!on; state.mapShift = shift || 0; },
     mute(m) { audio.muted = m; },
     destroy() { // frees the GPU side too: the UI destroys and re-creates the game to change circuit
       cancelAnimationFrame(raf);

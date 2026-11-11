@@ -14,6 +14,7 @@
   const make = ApexGP.create, q = new URLSearchParams(location.search), num = (k, d) => +(q.get(k) || d);
   ApexGP.create = function (canvas, opts) {
     if (q.has('track')) opts = Object.assign({}, opts, { track: q.get('track') }); // &track=virel|callow
+    opts = Object.assign({}, opts, { quality: q.has('q') ? +q.get('q') : 2 }); // headless is a software renderer, which auto would send to LOW; &q=0|1|2
     const game = window.__game = make(canvas, opts), sim = game.sim, DT = 1 / 240;
     const drive = (until, pace) => { let n = 0; while (!until() && n++ < 240 * 900) { const inp = ApexGP.autopilot(sim, 8, pace); if (game.race) game.race.step(DT, inp); else sim.step(DT, inp); } };
     const pose = q.get('pose');
