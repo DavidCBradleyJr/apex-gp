@@ -7,6 +7,7 @@ const assert = require('assert');
 
 const track = buildTrack();
 const sim = new Sim(track, {});
+const vLap = {}; // top speed of each lap: it varies with how much ERS charge the lap starts with
 let vmax = 0, gLat = 0, gBrake = 0, impacts = 0, t = 0, Tmin = 1e9, Tmax = 0;
 const DT = 1 / 240;
 while (sim.lapsDone.length < 3 && t < 400) {
@@ -14,7 +15,7 @@ while (sim.lapsDone.length < 3 && t < 400) {
   sim.step(DT, autopilot(sim));
   t += DT;
   if (!Number.isFinite(sim.x)) throw new Error('NaN at t=' + t);
-  vmax = Math.max(vmax, sim.speed); gLat = Math.max(gLat, Math.abs(sim.ay) / 9.81); gBrake = Math.max(gBrake, -sim.ax / 9.81);
+  vmax = Math.max(vmax, sim.speed); vLap[sim.lap] = Math.max(vLap[sim.lap] || 0, sim.speed); gLat = Math.max(gLat, Math.abs(sim.ay) / 9.81); gBrake = Math.max(gBrake, -sim.ax / 9.81);
   if (sim.impact > 1) impacts++;
   if (t > 60) sim.tyreT.forEach(T => { Tmin = Math.min(Tmin, T); Tmax = Math.max(Tmax, T); });
 }
@@ -24,7 +25,7 @@ console.log('laps', laps.join(' | '));
 console.log('vmax', (vmax * 3.6).toFixed(0), 'km/h  gLat', gLat.toFixed(2), ' gBrake', gBrake.toFixed(2), ' impacts', impacts, ' tyreT', Tmin.toFixed(0), '-', Tmax.toFixed(0), ' wear', sim.wear.map(w => (w * 100).toFixed(1)).join('/'), '%');
 assert(sim.lapsDone.length === 3, 'autopilot should finish 3 laps');
 const best = Math.min(...sim.lapsDone.slice(1).map(l => l.time));
-assert(best > 70 && best < 110, 'lap time plausible for 4.2 km');
+assert(best > 55 && best < 80, 'lap time plausible for 4.2 km (about 240 km/h average)');
 assert(vmax * 3.6 > 290 && vmax * 3.6 < 360, 'top speed plausible');
 assert(gLat > 2 && gLat < 6.5, 'cornering g plausible (autopilot is conservative)');
 assert(gBrake > 2.5 && gBrake < 7, 'braking g plausible');
@@ -44,7 +45,7 @@ for (let k = 0; k <= 400; k++) {
 assert(maxOff < track.halfW + 0.8, 'ghost stays on the road');
 assert(maxStep < 97 * rec.lapTime / 400 * 1.05, 'ghost never jumps');
 assert(prevS > track.L - 8, 'ghost finishes the lap at the line: s=' + prevS.toFixed(1));
-assert(Math.abs(Math.max(...rec.v) - vmax) < 3, 'speed trace peaks at top speed');
+assert(Math.abs(Math.max(...rec.v) - vLap[rec.lap]) < 3, 'speed trace peaks at that lap\'s top speed');
 console.log('ghost: off-centre max', maxOff.toFixed(2), 'm, ends at s', prevS.toFixed(1));
 
 // --- brakes, fuel, track evolution, compounds: a short stint per case ---
@@ -97,12 +98,16 @@ assert(wet.best - light.best > 4 && wet.best - light.best < 25, 'rain costs seve
 for (const def of TRACKS) {
   const tr = buildTrack(def), c = new Sim(tr, {}); let tt = 0, hit = 0, near = 1e9;
   while (c.lapsDone.length < 2 && tt < 300) { c.impact = 0; c.step(DT, autopilot(c)); tt += DT; if (c.impact > 1) hit++; }
-  for (let i = 0; i < tr.N; i += 3) for (let j = i + 100; j < tr.N; j += 3) if (tr.N - j + i >= 100) near = Math.min(near, Math.hypot(tr.px[i] - tr.px[j], tr.pz[i] - tr.pz[j]));
-  console.log(def.id, (tr.L / 1000).toFixed(3), 'km', tr.turns, 'turns', c.lapsDone.map(l => fmtTime(l.time)).join(' '), ' closest sections', near.toFixed(0), 'm');
+  // near: the gap left between the barriers of two unrelated sections that face each other
+  for (let i = 0; i < tr.N; i += 2) for (let j = i + 100; j < tr.N; j += 2) if (tr.N - j + i >= 100) {
+    const dx = tr.px[j] - tr.px[i], dz = tr.pz[j] - tr.pz[i], d = Math.hypot(dx, dz); if (d > 120) continue;
+    near = Math.min(near, d - (dz * tr.tx[i] - dx * tr.tz[i] > 0 ? tr.wallP[i] : tr.wallM[i]) - (dx * tr.tz[j] - dz * tr.tx[j] > 0 ? tr.wallP[j] : tr.wallM[j]));
+  }
+  console.log(def.id, (tr.L / 1000).toFixed(3), 'km', tr.turns, 'turns', c.lapsDone.map(l => fmtTime(l.time)).join(' '), ' barrier gap', near > 1e8 ? 'none close' : near.toFixed(0) + ' m');
   assert(c.lapsDone.length === 2 && hit === 0 && c.lapsDone.every(l => l.valid), def.id + ': two clean valid laps');
-  assert(near > 80, def.id + ': unrelated sections stay 80 m apart');
-  let straight = true; for (let i = 30; i < 380; i++) if (tr.corner[i]) straight = false;
-  assert(straight && Math.abs(tr.pz[200]) < 5, def.id + ': s = 60 to 760 m is the shared start straight (pit building and grandstands stand along it)');
+  assert(near > 8, def.id + ': barriers of unrelated sections stay 8 m apart');
+  let straight = true; for (let i = 30; i < 125; i++) if (tr.corner[i]) straight = false;
+  assert(straight && Math.abs(tr.pz[100]) < 5, def.id + ': s = 60 to 250 m is straight along z = 0 (the pit building and first grandstands stand there)');
   assert(tr.drs.length >= 1 && tr.drs.every(([a, b]) => ((b - a + tr.L) % tr.L) > 150 && ((b - a + tr.L) % tr.L) < 1300), def.id + ': DRS zones are real straights');
 }
 console.log('OK');

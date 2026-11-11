@@ -6,10 +6,12 @@ const G = 9.81, RHO = 1.225, TAU = Math.PI * 2;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp = (a, b, t) => a + (b - a) * t;
 
-// ---------------- Tracks (all fictional) ----------------
+// ---------------- Tracks: three fictional, three real layouts ----------------
 // Control points of a closed centripetal Catmull-Rom, clockwise, in metres. Every layout shares the same start straight
 // (z = 0, x from -500 to 450, entered through [-640,45],[-600,-5] so it comes out straight) so the pit building, grandstands and gantry fit; keep other track 120 m clear of it and
-// keep unrelated sections at least 80 m apart (test/sim-test.js checks both).
+// keep unrelated sections at least 80 m apart (test/sim-test.js checks the straight and that facing barriers never meet).
+// The real layouts are flat copies of the centre lines in the TUM racetrack database (LGPL-3.0, from OpenStreetMap), made by
+// tools/import-track.js: start line at [-500,0] heading +x like the rest, but with their own, shorter start straights.
 const TRACKS = [
   { id: 'kestrel', name: 'Kestrel Valley Circuit', note: 'Flowing mid-speed layout',
     pts: [[-500,0],[0,0],[450,0],[570,40],[605,160],[585,320],[650,450],[780,500],[860,620],[810,760],[650,825],[450,805],[100,820],[-180,830],[-320,800],[-355,690],[-350,570],[-318,500],[-388,430],[-360,360],[-400,250],[-560,130],[-640,45],[-600,-5]] },
@@ -17,6 +19,12 @@ const TRACKS = [
     pts: [[-500,0],[0,0],[450,0],[720,10],[850,90],[870,230],[800,330],[560,380],[470,440],[480,530],[560,580],[800,620],[870,720],[820,830],[680,870],[200,850],[-150,830],[-250,770],[-230,690],[-310,630],[-480,640],[-620,570],[-690,420],[-660,250],[-680,130],[-640,45],[-600,-5]] },
   { id: 'callow', name: 'Callow Heath', note: 'Tight and technical: hairpins and esses',
     pts: [[-500,0],[0,0],[450,0],[540,30],[560,110],[500,170],[380,180],[330,250],[400,330],[520,340],[600,420],[580,540],[480,600],[330,580],[250,480],[160,440],[80,500],[90,620],[0,700],[-140,690],[-220,600],[-200,480],[-280,400],[-420,420],[-520,360],[-560,240],[-600,130],[-640,45],[-600,-5]] },
+  { id: 'monza', name: 'Monza', note: 'Real layout, 5.79 km: flat out between three chicanes',
+    pts: [[-500,0],[-385,0.2],[-270.1,0.6],[-155.2,1],[-40.2,0.6],[74.7,-0.5],[189.7,-1.9],[304.6,-3.1],[379.6,-3.9],[394.5,-4.1],[404.5,-4.2],[419.2,-3.5],[430.2,2.3],[434.2,14.7],[438.2,27.9],[448.6,35.2],[462.3,34.5],[481.2,28.2],[556.5,1.5],[635.5,-9.5],[740.4,-11.5],[809.8,-5.1],[871.1,16.1],[926.4,49.8],[991.5,118.5],[1035.8,202],[1066.7,312.5],[1086.7,425.7],[1106.6,538.9],[1117.1,613],[1119.1,627.9],[1120.6,637.8],[1122.3,647.8],[1126.4,661.7],[1135.3,671.6],[1149,676.7],[1162.5,681.6],[1171.6,691.5],[1176.4,705.3],[1206.3,784.7],[1253.4,889.5],[1275.6,939.8],[1285,962.9],[1290.9,987],[1288.8,1011.5],[1281.3,1029.7],[1269.2,1045.5],[1253.4,1057.2],[1230.1,1065.3],[1151.7,1081],[1043.7,1101.7],[1024.1,1105.4],[1009.3,1108.1],[994.5,1109.3],[980.4,1106.4],[968.2,1098.7],[955.6,1083.4],[910,1017.7],[844.5,923.3],[779,828.8],[704.5,741.6],[620.6,663],[536.9,584.2],[453.1,505.5],[369.3,426.8],[300.2,361.8],[285.6,348.1],[274.5,338],[262.5,329.6],[248.8,325.9],[234.1,327.2],[199.7,333.3],[165.1,331.5],[132.7,319],[116.6,307.5],[105.8,297.1],[95.1,286.6],[82.9,279.1],[68.7,275.9],[38.6,274.1],[-76.2,271.4],[-191.2,269.5],[-306.1,269.1],[-421.1,268.7],[-536,268.1],[-651,267.6],[-765.9,267.2],[-850.9,266.9],[-875.9,266.5],[-900.6,264.4],[-923.7,255.7],[-942.9,240.2],[-957.1,219.9],[-964.9,196.5],[-964.8,171.9],[-955,138.5],[-928.2,96.7],[-886.3,61.5],[-827.3,35.1],[-734,18.1],[-619.7,5.9],[-505,0]] },
+  { id: 'silverstone', name: 'Silverstone', note: 'Real layout, 5.89 km: fast sweepers all lap',
+    pts: [[-500,0],[-390,0],[-280,-0.1],[-240,-0.3],[-220,-0.4],[-200.3,1.2],[-182.6,9.2],[-163.6,25.2],[-139.5,56.9],[-98.6,119.7],[-70.7,161],[-45.5,185.1],[-15.1,202],[42.3,219.1],[134.7,241.2],[154.2,245.8],[168.7,249.5],[182.4,255],[192.9,264.3],[196.9,277.5],[193.9,291.3],[186.5,304.1],[160.3,340.8],[151.6,352.9],[143.2,365.3],[136.7,378.5],[136.2,391.8],[144.5,401.4],[158.3,405.4],[173,405.3],[197.2,399.6],[266.3,371],[283.5,360.7],[295.8,352.3],[307.2,342.6],[315.9,330.9],[320.8,317.1],[324.8,287.4],[334.1,177.8],[343.2,68.2],[352.5,-41.4],[361.7,-151],[370.2,-260.7],[373,-295.6],[374.2,-320.5],[370.3,-344.9],[362.1,-362.9],[353.6,-375.1],[342.9,-385.3],[330,-392.3],[315.7,-394.6],[301.4,-392],[283.7,-383.2],[258.3,-367.3],[241,-357.2],[222.7,-349.6],[203.3,-347.4],[188.8,-350.3],[175.7,-356.8],[165.2,-366.9],[158.4,-379.8],[155.6,-399.1],[159.6,-418.2],[169.8,-435],[185.1,-447.2],[203.6,-454.1],[247.6,-463.1],[311.4,-475.9],[360.8,-482],[410.5,-477],[440,-471.4],[467.7,-461],[508.2,-432.1],[567.7,-371.4],[646.2,-287.4],[720.4,-206.1],[763.5,-157.5],[786.5,-131.1],[802.7,-100.5],[811,-71.8],[813.3,-47],[809.3,-22.7],[798,-0.6],[754.5,60.4],[678.8,146.9],[597.1,220.5],[528,278.1],[491.1,311.7],[463.5,353.1],[453.7,376],[445.9,394.3],[434,410],[417.8,421.1],[389.7,431.5],[342.2,446.8],[314.6,458.4],[289.8,475],[271.3,498.1],[260.4,525.9],[254,550],[243.6,572.4],[226.5,590.2],[204.5,600.9],[179.9,603.7],[150.6,598.2],[104.1,580.3],[76.1,570],[46.7,565.9],[12,569.8],[-101.6,587.7],[-210.2,605.2],[-318.9,622.3],[-427.6,639.5],[-541,658],[-655.6,666.9],[-695.6,669.2],[-720.5,669.2],[-744.8,664.4],[-766.6,652.8],[-784.8,635.9],[-798.2,615.1],[-804.3,591.2],[-802.4,561.6],[-791.5,533.9],[-752.2,447.6],[-726.3,335.8],[-710.4,252.3],[-707,237.7],[-704.7,227.9],[-701.9,213.3],[-702.6,199.4],[-710.4,188.1],[-723.1,181.4],[-737.5,177.7],[-751.5,173.1],[-763.6,165.1],[-771.4,153.2],[-773.5,139],[-770.8,119.3],[-753,67.5],[-734.9,37.6],[-725.7,25.8],[-715.5,14.9],[-703.6,6.2],[-689.8,1.5],[-670,0.1],[-565,0]] },
+  { id: 'bahrain', name: 'Bahrain', note: 'Real layout, 5.41 km: long straights into hairpins',
+    pts: [[-500,0],[-390,0],[-280,-0.1],[-170,-0.1],[-60,-0.1],[50.1,-0.2],[160.1,-0.9],[185.1,-1.1],[195.1,-1.2],[205.1,-1.3],[219.8,-0.7],[231.5,4.5],[234.1,15.8],[227.5,27.9],[214.4,43],[204.5,54.2],[194.5,65.4],[185.7,77.3],[181.8,90.7],[184.1,104.9],[192.5,128.4],[204.7,161.2],[213.9,189.6],[215.1,219.3],[206.7,278.7],[190.4,387.5],[174.1,496.3],[157.7,605.1],[142.9,704],[140.6,718.8],[138.4,733.6],[135.4,748.1],[128.7,760],[116.3,765.8],[101.7,766.7],[87.1,764.7],[74.4,758.3],[63.8,748.1],[20.4,699.7],[-42.3,635.3],[-77.6,607.6],[-109,592.3],[-123,586.9],[-136.6,581],[-148.4,572.5],[-157.1,560.8],[-163.3,542.2],[-164.3,517.4],[-162.6,492.5],[-161.6,467.6],[-167,443.7],[-180.4,423],[-203.1,403.8],[-292.5,339.5],[-312.7,324.9],[-320.9,319.1],[-332.9,310.1],[-342.5,299.7],[-345.7,286.5],[-342.2,273],[-332.5,264.1],[-318.5,261.5],[-298.7,262.8],[-184.4,275.9],[-75.1,288.4],[-40.3,291.9],[-10.6,290.6],[13.3,283.6],[34.2,270.6],[47.9,256.3],[57.1,244.4],[64.7,231.9],[65.7,219.6],[56.5,211.5],[42.3,208.4],[-2.5,204.4],[-117.1,196.5],[-227.2,196.5],[-337.2,196.5],[-447.2,196.8],[-557.2,197.1],[-592.2,197.2],[-607.1,197.2],[-622.1,197.7],[-635.9,201.1],[-645.4,210.7],[-650.8,224.3],[-654.3,248.8],[-649.9,288.3],[-637.8,321],[-617.2,348.8],[-589.3,369.7],[-543.5,389.2],[-510.3,400.3],[-482.7,411.8],[-459.1,430],[-439.2,452.3],[-424.9,478.3],[-418.6,507.4],[-421.5,547],[-436.3,589.3],[-455.9,635.3],[-463.7,653.7],[-473,671.2],[-490.2,688.7],[-502.6,697.1],[-515.5,704.5],[-529.4,709.5],[-543.8,710],[-557.2,705],[-568.7,695.8],[-584.3,676.4],[-614.7,624.7],[-672.5,531.1],[-730.3,437.5],[-788.3,344],[-846.1,250.5],[-904.4,157.2],[-940.2,97],[-947.7,84],[-955.2,71],[-961.4,57.9],[-961.2,44.5],[-952.9,33.9],[-940.1,26.6],[-917.5,16.1],[-894.5,6.5],[-865,2.8],[-755,1],[-645,0],[-535,0]] },
 ];
 for (const t of TRACKS) { t.halfW = 6.5; t.kerbW = 1.2; }
 const CIRCUIT = TRACKS[0];
@@ -79,17 +87,18 @@ function buildTrack(def = CIRCUIT) {
   return tr;
 }
 
-// Racing line: an elastic band pulled tight inside the track limits (≈ minimum curvature: outside-apex-outside).
+// Racing line: the least-bent path inside the track limits (minimum curvature: outside-apex-outside). Each point moves to
+// where the bend through its four neighbours is smallest; coarse strides first so whole corners open up, then finer ones.
+const LINE_STRIDES = [24, 12, 6, 3, 1], LINE_ITERS = 160;
 function racingLine(tr) {
   const { N, px, pz, tx, tz } = tr, lim = tr.halfW - 1.1;
   const off = new Float32Array(N), x = new Float32Array(N), z = new Float32Array(N);
   const upd = (i) => { x[i] = px[i] - tz[i] * off[i]; z[i] = pz[i] + tx[i] * off[i]; };
   for (let i = 0; i < N; i++) upd(i);
-  for (let it = 0; it < 420; it++) {
-    const k = it < 140 ? 18 : it < 280 ? 8 : 3;
+  for (const k of LINE_STRIDES) for (let it = 0; it < LINE_ITERS; it++) {
     for (let i = 0; i < N; i++) {
-      const a = (i - k + N) % N, b = (i + k) % N;
-      const mx = (x[a] + x[b]) / 2 - px[i], mz = (z[a] + z[b]) / 2 - pz[i];
+      const a = (i - k + N) % N, b = (i + k) % N, a2 = (i - 2 * k + 2 * N) % N, b2 = (i + 2 * k) % N;
+      const mx = (4 * (x[a] + x[b]) - x[a2] - x[b2]) / 6 - px[i], mz = (4 * (z[a] + z[b]) - z[a2] - z[b2]) / 6 - pz[i];
       const t = -mx * tz[i] + mz * tx[i];
       off[i] = clamp(off[i] + 0.6 * (t - off[i]), -lim, lim); upd(i);
     }
@@ -102,6 +111,8 @@ function racingLine(tr) {
     const la = Math.hypot(ax, az), lb = Math.hypot(bx, bz);
     k[i] = Math.asin(clamp((ax * bz - az * bx) / (la * lb), -1, 1)) / ((la + lb) / 2);
   }
+  // where the line runs along a track limit it copies every wobble of the edge; a car cannot follow 2 m features anyway
+  const ks = k.slice(); for (let i = 0; i < N; i++) k[i] = (ks[(i - 2 + N) % N] + ks[(i - 1 + N) % N] + ks[i] + ks[(i + 1) % N] + ks[(i + 2) % N]) / 5;
   return { off, x, z, ds, k, v: new Float32Array(N), vb: new Float32Array(N) };
 }
 
@@ -110,27 +121,43 @@ function aeroCoeffs(set, drs) {
   const fw = set.frontWing, rw = set.rearWing;
   return { clF: 1.80 + 0.11 * fw, clR: (2.20 + 0.13 * rw) * (drs ? 0.72 : 1), cdA: 1.02 + 0.018 * fw + 0.032 * rw - (drs ? 0.21 : 0) };
 }
-// Peak deceleration the car can hold at speed v (grip incl. downforce, plus drag), with a little margin.
-function brakeDecel(set, v) {
+// Calibration, all in one place.
+//  lat, brk: how much of the tyres the speed profile (racing line colours, autopilot, AI) asks for. The car itself holds about
+//            1.75 laterally at low speed; lk loads the profile's tyre the way the outside wheels are loaded in a corner.
+//  look:     autopilot look-ahead, seconds of travel.    kw, vmax: power and top speed the profile assumes on the straights.
+//  heat, fheat: tyre heating per watt of sliding, and the front tyres' share (they are smaller, and have no drive to warm them).
+//  ls: tyre load sensitivity.    pow: engine torque scale (1.2 puts engine + ERS at about 720 kW, a current F1 car).
+const TUNE = { lat: 1.65, brk: 1.5, lk: 1.5, look: 0.3, kw: 690, vmax: 100, heat: 0.14, fheat: 1.3, ls: 0.075, pow: 1.2 };
+const loadSens = (Fz) => clamp(1 - TUNE.ls * (Fz / 4500 - 1), 0.75, 1.1); // tyres grip a little less per newton as they are loaded up
+// Peak deceleration the car can hold at speed v (grip incl. downforce, plus drag), with a little margin. `used` is the share
+// of the grip already spent on cornering; drag is not tyre grip, so it always counts in full. The trade is linear, which is
+// gentler than the tyres' friction circle: braking hard at full cornering load unloads the rear tyres and spins the car.
+function brakeDecel(set, v, used = 0) {
   const a = aeroCoeffs(set, false);
   const m = carMass(set);
-  return 1.3 * compoundK(set) * (G + 0.5 * RHO * (a.clF + a.clR) * v * v / m) + 0.5 * RHO * a.cdA * v * v / m;
+  return TUNE.brk * compoundK(set) * (G + 0.5 * RHO * (a.clF + a.clR) * v * v / m) * (1 - used) + 0.5 * RHO * a.cdA * v * v / m;
 }
 // Fastest speed at every point of the racing line: corner limit, then an acceleration pass and a braking pass.
 function speedProfile(tr, set) {
   const L = tr.line, N = tr.N, m = carMass(set), a = aeroCoeffs(set, false);
-  const mu = 1.31 * compoundK(set), kD = 0.5 * RHO * (a.clF + a.clR) / m, kDrag = 0.5 * RHO * a.cdA / m;
+  const mu = TUNE.lat * compoundK(set), kD = 0.5 * RHO * (a.clF + a.clR) / m, kDrag = 0.5 * RHO * a.cdA / m;
   const v = L.v, vb = L.vb;
-  for (let i = 0; i < N; i++) { vb[i] = Math.min(115, Math.sqrt(mu * G / Math.max(Math.abs(L.k[i]) - mu * kD, 1e-5))); v[i] = Math.min(97, vb[i]); }
+  const aLat = (u) => mu * (G + kD * u * u) * loadSens(TUNE.lk * m * (G + kD * u * u) / 4); // cornering limit at speed u
+  const used = (i, u) => Math.min(1, u * u * Math.abs(L.k[i]) / aLat(u)); // share of the grip the corner takes at speed u
+  for (let i = 0; i < N; i++) {
+    let u = Math.sqrt(mu * G / Math.max(Math.abs(L.k[i]) - mu * kD, 1e-5));
+    for (let n = 0; n < 4 && u < 200; n++) u = Math.sqrt(aLat(u) / Math.max(Math.abs(L.k[i]), 1e-5)); // settle on the load-sensitive limit
+    vb[i] = Math.min(115, u); v[i] = Math.min(TUNE.vmax, vb[i]);
+  }
   for (let n = 1; n < 2 * N; n++) {
     const i = n % N, p = (n - 1) % N, vp = Math.max(v[p], 3);
-    const acc = Math.min(mu * (0.54 * G + 0.55 * kD * vp * vp), 700000 / (m * vp)) - kDrag * vp * vp;
+    const u = used(p, vp), acc = Math.min(mu * (0.54 * G + 0.55 * kD * vp * vp) * Math.sqrt(1 - u * u), TUNE.kw * 1000 / (m * vp)) - kDrag * vp * vp;
     v[i] = Math.min(v[i], Math.sqrt(vp * vp + 2 * Math.max(acc, 0) * L.ds[p]));
   }
   for (let n = 2 * N - 1; n >= 0; n--) {
     const i = n % N, q = (n + 1) % N, vq = v[q];
-    v[i] = Math.min(v[i], Math.sqrt(vq * vq + 2 * brakeDecel(set, vq) * L.ds[i]));
-    const wq = vb[q]; vb[i] = Math.min(vb[i], Math.sqrt(wq * wq + 2 * brakeDecel(set, wq) * L.ds[i]));
+    v[i] = Math.min(v[i], Math.sqrt(vq * vq + 2 * brakeDecel(set, vq, used(q, vq)) * L.ds[i]));
+    const wq = vb[q]; vb[i] = Math.min(vb[i], Math.sqrt(wq * wq + 2 * brakeDecel(set, wq, used(q, wq)) * L.ds[i]));
   }
 }
 
@@ -200,7 +227,7 @@ function ghostPose(rec, lapT, out) {
   const n = rec.n, T = rec.lapTime, t = ((lapT % T) + T) % T;
   let lo = 0, hi = n - 1;
   while (lo < hi) { const m = (lo + hi + 1) >> 1; if (rec.t[m] <= t) lo = m; else hi = m - 1; }
-  const b = (lo + 1) % n, t0 = rec.t[lo], t1 = b ? rec.t[b] : T;
+  const b = (lo + 1) % n, t0 = rec.t[lo], t1 = b ? rec.t[b] : T + rec.t[0]; // sample 0 is taken a step after the line, not on it
   const f = t1 > t0 ? clamp((t - t0) / (t1 - t0), 0, 1) : 0;
   let dp = (rec.psi[b] - rec.psi[lo]) % TAU; if (dp > Math.PI) dp -= TAU; else if (dp < -Math.PI) dp += TAU;
   out.x = lerp(rec.x[lo], rec.x[b], f); out.z = lerp(rec.z[lo], rec.z[b], f); out.psi = rec.psi[lo] + dp * f; out.v = lerp(rec.v[lo], rec.v[b], f);
@@ -254,8 +281,11 @@ class Sim {
     this.brk += clamp(inp.brake - this.brk, -rate * dt * 2, rate * dt * 1.4);
     const sRate = inp.analog ? 12 : (Math.sign(inp.steer) !== Math.sign(this.steer) || inp.steer === 0 ? 5 : 2.6);
     this.steer += clamp(inp.steer - this.steer, -sRate * dt, sRate * dt);
-    const sens = inp.analog ? 1 / (1 + v * v / 4900) : 1 / (1 + v * v / 600);
-    const delta = this.steer * c.maxLock * Math.max(sens, 0.08);
+    // A key is all or nothing, so a full press asks for the lock that just saturates the front tyres at this speed: the
+    // angle of the tightest arc the grip allows, plus the slip the tyres need to get there. A pad's stick is scaled by speed.
+    const aero0 = aeroCoeffs(set, false), kDf = 0.5 * RHO * (aero0.clF + aero0.clR) / c.m;
+    const lock = inp.analog ? c.maxLock * Math.max(1 / (1 + v * v / 4900), 0.08) : Math.min(c.maxLock, c.wb * 1.75 * (G / Math.max(v * v, 1) + kDf) + 0.02);
+    const delta = this.steer * lock;
     this.roadAngle = delta;
     let thr = this.thr, brk = this.brk;
 
@@ -301,7 +331,7 @@ class Sim {
     let drive = 0;
     this.tcActive = false; this.absActive = false;
     if (this.gear >= 1) {
-      let T = engineTorque(this.rpm) * thr;
+      let T = engineTorque(this.rpm) * TUNE.pow * thr;
       if (this.rpm > c.limiter || this.fuel <= 0) T = 0;
       if (this.inRace) this.fuel = Math.max(0, this.fuel - FUEL_FLOW * thr * (this.rpm / 12000) * dt); // time trial runs at a fixed load
       if (thr < 0.05) T = -(25 + this.rpm * 0.0035) * (1 - brk * 0.5);
@@ -334,7 +364,7 @@ class Sim {
       const surf = SURF[sname];
       const T = this.tyreT[w];
       const tempF = clamp(1 - ((T - cmp.opt) / cmp.win) ** 2, 0.7, 1);
-      const loadS = clamp(1 - 0.075 * (Fz[w] / 4500 - 1), 0.75, 1.1);
+      const loadS = loadSens(Fz[w]);
       gripK = Math.min(gripK, (T > cmp.opt ? tempF : 1) * (1 - 0.2 * this.wear[w])); // overheated or worn (cold tyres warm up by being pushed)
       // rain: slicks aquaplane, and paint and kerbs turn to ice for everyone
       const wetK = set.wet ? (cmp === COMPOUNDS.wet ? 1 : 0.5) * (sname === 'kerb' ? 0.72 : 1) : 1;
@@ -379,7 +409,7 @@ class Sim {
       this.brakeT[w] += (bPow / 2000 - (bT - set.ambient) * (0.010 + 0.0003 * v)) * dt; // ~1.1 kg carbon disc, airflow cooling
       const slipPow = Math.abs(fy * ly) + Math.abs(fx) * Math.abs(vx) * (this.lock[w] || this.spin[w] ? 0.25 : 0.03);
       heatAll += slipPow;
-      this.tyreT[w] += (0.2 * slipPow - (set.wet ? 9 : 6) * (T - set.ambient) * (1 + v / 25)) / 2500 * dt; // standing water cools the tread
+      this.tyreT[w] += (TUNE.heat * (front ? TUNE.fheat : 1) * slipPow - (set.wet ? 9 : 6) * (T - set.ambient) * (1 + v / 25)) / 2500 * dt; // standing water cools the tread
       this.wear[w] = Math.min(1, this.wear[w] + slipPow * dt * cmp.wear);
     }
     this.slipMax = slipMax; this.gripK = gripK;
@@ -476,7 +506,7 @@ function fmtTime(t) {
 // ---------------- Autopilot (used by tests and the menu attract loop) ----------------
 function autopilot(sim, look = 8, pace = 1, off = 0, vCap = 1e9) {
   const tr = sim.track, L = tr.line, v = sim.speed;
-  const j = (sim.idx + Math.round((look + v * 0.45) / tr.ds)) % tr.N;
+  const j = (sim.idx + Math.round((look + v * TUNE.look) / tr.ds)) % tr.N;
   const o = clamp(L.off[j] + off, -(tr.halfW - 1.1), tr.halfW - 1.1) - L.off[j]; // offset from the racing line, kept on the road
   const dx = L.x[j] - tr.tz[j] * o - sim.x, dz = L.z[j] + tr.tx[j] * o - sim.z;
   const cf = Math.cos(sim.psi), sf = Math.sin(sim.psi);
@@ -502,7 +532,7 @@ function autopilot(sim, look = 8, pace = 1, off = 0, vCap = 1e9) {
 const DRIVERS = [ // fictional grid: code, name, livery hue shift (degrees) for the renderer
   ['VOS', 'M. Voss', 140], ['KAI', 'T. Kaine', 285], ['RYD', 'A. Ryder', 60], ['TAN', 'S. Tanaro', 200], ['MIL', 'J. Milano', 330],
 ];
-const SKILL = { rookie: [0.8, 0.84], pro: [0.9, 1], elite: [0.975, 1] }; // [corner pace, throttle cap] ≈ 1:25 / 1:17 / 1:14 laps
+const SKILL = { rookie: [0.8, 0.84], pro: [0.9, 1], elite: [0.975, 1] }; // [corner pace, throttle cap] ≈ 1:13 / 1:06 / 1:03 laps of Kestrel
 function wrapGap(tr, a, b) { let g = a - b; if (g > tr.L / 2) g -= tr.L; else if (g < -tr.L / 2) g += tr.L; return g; }
 
 class Race {
@@ -548,7 +578,7 @@ class Race {
       else if (Math.abs(lat) > 1.2) wantD = o.sim.d + side * 3.3; // alongside: hold station next to it, through the corner too
     }
     // the autopilot applies the offset at its look-ahead point, so measure it against the line there
-    const j = (sim.idx + Math.round((8 + sim.speed * 0.45) / tr.ds)) % tr.N;
+    const j = (sim.idx + Math.round((8 + sim.speed * TUNE.look) / tr.ds)) % tr.N;
     const want = wantD === null ? 0 : clamp(wantD, -(tr.halfW - 1.3), tr.halfW - 1.3) - tr.line.off[j];
     me.off += clamp(want - me.off, -4.5 / 240, 4.5 / 240);
     const pace = me.curPace = Math.min(paceCap, me.pace * (corner ? 1 - 0.03 * Math.min(Math.abs(me.off), 4) : 1) * (me.finished ? 0.75 : 1)); // off-line in a corner means a tighter, slower arc
@@ -1310,7 +1340,8 @@ function create(canvas, opts = {}) {
   function endRace() { if (!race) return; race = null; sim.inRace = false; sim.resetSession(); Object.assign(sim, tt); }
   function poseCar(group, whs, s, dtF) {
     const roll = clamp(s.ay / G * 0.006, -0.025, 0.025);
-    group.position.set(s.x, s.surf.indexOf('kerb') >= 0 && s.speed > 5 ? Math.random() * 0.02 : 0, s.z);
+    // drawn where the car is now, not at the last 240 Hz step: the leftover time varies frame to frame and showed as judder at speed
+    group.position.set(s.x + s.vx * acc, s.surf.indexOf('kerb') >= 0 && s.speed > 5 ? Math.random() * 0.02 : 0, s.z + s.vz * acc);
     group.rotation.set(roll, -s.psi, clamp(-s.ax / G * 0.006, -0.02, 0.02));
     const vxCar = s.vx * Math.cos(s.psi) + s.vz * Math.sin(s.psi);
     for (const wh of whs) {
@@ -1448,7 +1479,7 @@ function create(canvas, opts = {}) {
   const CAMS = ['CHASE', 'T-CAM', 'COCKPIT'];
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
   const nearCar = { rpm: 0, dist: 0, closing: 0, pan: 0 };
-  const vF = new THREE.Vector3(), vUp = new THREE.Vector3(0, 1, 0), vC = new THREE.Vector3(), vT = new THREE.Vector3();
+  const vF = new THREE.Vector3(), vC = new THREE.Vector3(), vT = new THREE.Vector3();
   let fps = 60, camPsi = sim.psi, headYaw = 0, shake = 0, last = performance.now(), acc = 0, telT = 0, raf = 0, orbit = 0;
   const DT = 1 / 240;
 
@@ -1621,7 +1652,7 @@ function create(canvas, opts = {}) {
     smokeGeo.attributes.position.needsUpdate = true;
 
     // camera
-    const f = vF.set(Math.cos(sim.psi), 0, Math.sin(sim.psi)), up = vUp;
+    const f = vF.set(Math.cos(sim.psi), 0, Math.sin(sim.psi));
     let fov = 62;
     shake = sim.surf.some(s => s !== 'asphalt') && sim.speed > 5 ? 0.04 : sim.speed / 95 * 0.006;
     rig.visible = false;
@@ -1636,21 +1667,20 @@ function create(canvas, opts = {}) {
       camPos.set(sim.x + Math.cos(a) * r, pc ? pc.h : 1.6 + Math.sin(orbit * 0.7) * 0.4, sim.z + Math.sin(a) * r);
       camera.position.copy(camPos); camera.lookAt(sim.x, 0.55, sim.z); fov = 42;
     } else {
-      const mode = CAMS[state.camMode];
+      const mode = CAMS[state.camMode], px = car.position.x, pz = car.position.z;
       if (mode === 'CHASE') {
         camPsi += (sim.psi - camPsi) * Math.min(1, dtF * 7);
         const cfc = vC.set(Math.cos(camPsi), 0, Math.sin(camPsi));
-        const target = vT.set(sim.x, 0, sim.z).addScaledVector(cfc, -7.4).addScaledVector(up, 2.05);
-        camPos.lerp(target, Math.min(1, dtF * 14)); if (camPos.distanceTo(target) > 30) camPos.copy(target);
-        camLook.set(sim.x, 0.9, sim.z).addScaledVector(f, 4);
-        fov = 60 + Math.min(16, sim.speed * 0.15);
+        camPos.set(px, 2.05, pz).addScaledVector(cfc, -7.4); // fixed distance: only the yaw trails, so the car no longer pulls away at speed
+        camLook.set(px, 0.9, pz).addScaledVector(f, 4);
+        fov = 60 + Math.min(6, sim.speed * 0.06);
       } else if (mode === 'T-CAM') {
-        camPos.set(sim.x, 1.78, sim.z).addScaledVector(f, -0.55); camLook.copy(camPos).addScaledVector(f, 30); camLook.y = 0.7; fov = 66 + Math.min(8, sim.speed * 0.08);
+        camPos.set(px, 1.78, pz).addScaledVector(f, -0.55); camLook.copy(camPos).addScaledVector(f, 30); camLook.y = 0.7; fov = 66 + Math.min(8, sim.speed * 0.08);
       } else {
         // driver's eyes: the head is pushed about by the g-forces and turns into the corner
         headYaw += (clamp(sim.r * 0.3, -0.35, 0.35) - headYaw) * Math.min(1, dtF * 5);
         const side = vC.set(-f.z, 0, f.x);
-        camPos.set(sim.x, EYE[1], sim.z).addScaledVector(f, EYE[0] - clamp(sim.ax / G, -5, 2) * 0.008).addScaledVector(side, -clamp(sim.ay / G, -4, 4) * 0.008);
+        camPos.set(px, EYE[1], pz).addScaledVector(f, EYE[0] - clamp(sim.ax / G, -5, 2) * 0.008).addScaledVector(side, -clamp(sim.ay / G, -4, 4) * 0.008);
         camLook.copy(camPos).addScaledVector(f, 30 * Math.cos(headYaw)).addScaledVector(side, 30 * Math.sin(headYaw)); camLook.y = EYE[1] - 1.5; fov = 68;
       }
       rig.visible = mode === 'COCKPIT';
@@ -1775,7 +1805,7 @@ function create(canvas, opts = {}) {
   };
 }
 
-const api = { create, buildTrack, TRACKS, trackDef, speedProfile, Sim, Race, collide, autopilot, ghostPose, REC_DS, fmtTime, CIRCUIT, CAR, COMPOUNDS, DEFAULT_SETUP, surfaceAt };
+const api = { TUNE, create, buildTrack, TRACKS, trackDef, speedProfile, Sim, Race, collide, autopilot, ghostPose, REC_DS, fmtTime, CIRCUIT, CAR, COMPOUNDS, DEFAULT_SETUP, surfaceAt };
 root.ApexGP = api;
 if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
