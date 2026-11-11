@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apex GP</title>
+<meta name="description" content="A browser F1 sim: three fictional circuits, time trial and races, cockpit view.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --accent: #ff6a1a; --panel: rgba(12,14,18,0.84); --line: rgba(255,255,255,0.12); --dim: #9aa3ad; --text: #f3f4f6; }
+  html, body { margin: 0; height: 100%; background: #07080a; color: var(--text); font: 14px Inter, system-ui, sans-serif; overflow: hidden; user-select: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+  .num { font-family: 'Barlow Condensed', sans-serif; font-variant-numeric: tabular-nums; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .label { font: 700 13px 'Barlow Condensed', sans-serif; letter-spacing: 0.22em; color: var(--dim); }
+  [hidden] { display: none !important; }
+  button { font: inherit; color: var(--text); cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  #menu { position: fixed; inset: 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 20px; padding: 28px; box-sizing: border-box; overflow-y: auto;
+    background: linear-gradient(90deg, rgba(7,8,10,0.92) 0%, rgba(7,8,10,0.7) 38%, rgba(7,8,10,0) 62%); }
+  #menu .col { display: flex; flex-direction: column; gap: 12px; width: 420px; max-width: 100%; }
+  #menu h1 { margin: 0; font: italic 800 68px/0.9 'Barlow Condensed', sans-serif; }
+  #go { min-height: 52px; border: 0; border-radius: 12px; background: var(--accent); color: #120800; font: 800 22px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; }
+  .opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .opt { min-height: 44px; padding: 4px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,0.03); text-align: left; font-size: 13px; }
+  .opt b { font: 700 14px 'Barlow Condensed', sans-serif; letter-spacing: 0.06em; color: var(--accent); text-align: right; }
+  .keys { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; font-size: 13px; color: #c3c9d1; }
+  .keys span:nth-child(even) { font: 600 15px 'Barlow Condensed', sans-serif; color: var(--text); text-align: right; }
+  .note { font-size: 12px; color: var(--dim); }
+
+  #hud > div { position: fixed; }
+  #timing { left: 18px; top: 18px; width: 250px; }
+  #lapTime { font-size: 44px; font-weight: 700; line-height: 1; margin: 4px 0 8px; }
+  .row { display: flex; justify-content: space-between; font-size: 17px; }
+  #tower { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 18px 1fr auto; gap: 3px 10px; font-size: 17px; }
+  #mapBox { right: 18px; top: 18px; width: 220px; }
+  #mapBox svg { width: 100%; height: 150px; display: block; }
+  #mapMeta { display: flex; justify-content: space-between; font-size: 13px; letter-spacing: 0.1em; color: var(--dim); }
+  #tyres { left: 18px; bottom: 18px; display: flex; gap: 14px; align-items: center; }
+  #tyreGrid { display: grid; grid-template-columns: 54px 54px; gap: 6px; }
+  #tyreGrid div { border-radius: 10px; padding: 4px 0; text-align: center; color: #0b0d10; font: 700 20px/1 'Barlow Condensed', sans-serif; }
+  #tyreGrid small { display: block; font: 600 10px Inter, sans-serif; }
+  #stats { font-size: 15px; line-height: 1.35; }
+  #dash { left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  #leds { display: flex; gap: 6px; }
+  #leds i { width: 14px; height: 14px; border-radius: 50%; background: #1b1f26; }
+  #dashRow { display: flex; align-items: center; gap: 18px; }
+  #speed { font-size: 54px; font-weight: 700; line-height: 0.9; text-align: right; min-width: 92px; }
+  #gear { width: 76px; height: 86px; border: 2px solid var(--accent); border-radius: 14px; display: grid; place-items: center; font-size: 66px; font-weight: 800; }
+  #ersBar { width: 140px; height: 8px; border-radius: 4px; background: #22252b; overflow: hidden; margin: 4px 0 8px; }
+  #ersBar i { display: block; height: 100%; background: #f5c400; }
+  .chips { display: flex; gap: 6px; }
+  .chips span { padding: 2px 8px; border-radius: 6px; border: 1px solid #3a414c; color: #6b7380; font: 700 14px 'Barlow Condensed', sans-serif; letter-spacing: 0.08em; }
+  #lights { left: 50%; top: 16%; transform: translateX(-50%); display: flex; gap: 14px; padding: 14px 20px; background: #0b0c0f; border-radius: 16px; }
+  #lights i { width: 44px; height: 44px; border-radius: 50%; background: #2a1414; }
+  #lights i.on { background: #ff2a1a; box-shadow: 0 0 26px rgba(255,42,26,0.9); }
+  #msg { left: 50%; top: 30%; transform: translateX(-50%); font: 800 34px 'Barlow Condensed', sans-serif; letter-spacing: 0.1em; text-shadow: 0 2px 10px #000; text-align: center; }
+  #overlay { inset: 0; display: grid; place-items: center; background: rgba(7,8,10,0.6); }
+  #overlay .panel { display: flex; flex-direction: column; gap: 10px; min-width: 300px; text-align: center; }
+  #overlay h2 { margin: 0; font: italic 800 44px 'Barlow Condensed', sans-serif; }
+  #overlay button { min-height: 46px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,0.05); font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.12em; }
+  #overlay button.main { background: var(--accent); color: #120800; border: 0; }
+  #result { display: grid; grid-template-columns: 24px 1fr auto; gap: 4px 14px; text-align: left; font-size: 19px; }
+  @media (max-width: 760px) { #tyres, #mapBox svg { display: none; } #timing { width: 190px; } #lapTime { font-size: 34px; } }
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0" aria-label="3D driving view"></canvas>
+
+<div id="menu">
+  <div class="col">
+    <div>
+      <div class="label" id="modeLine" style="color: var(--accent)">TIME TRIAL</div>
+      <h1>APEX GP</h1>
+      <div id="trackLine" style="color: #c3c9d1; font-size: 15px"></div>
+    </div>
+    <button id="go" type="button">GO TO GRID ›</button>
+    <div class="note" id="status">Loading…</div>
+    <div class="panel" style="display: flex; flex-direction: column; gap: 10px">
+      <div class="label">SESSION</div>
+      <div class="opts" id="sessionOpts"></div>
+      <div class="note" id="trackNote"></div>
+      <div class="label">CAR SETUP</div>
+      <div class="opts" id="carOpts"></div>
+    </div>
+  </div>
+  <div class="col" style="width: 300px; justify-content: flex-end">
+    <div class="panel">
+      <div class="label" style="margin-bottom: 8px">CONTROLS</div>
+      <div class="keys">
+        <span>Throttle / brake</span><span>↑ ↓ or W S</span>
+        <span>Steer</span><span>← → or A D</span>
+        <span>Shift up / down</span><span>E / Q</span>
+        <span>DRS (in zones)</span><span>X</span>
+        <span>ERS overtake</span><span>Space</span>
+        <span>Change view</span><span>C</span>
+        <span>Racing line · ghost</span><span>L · G</span>
+        <span>Recover to track</span><span>R</span>
+        <span>Pause · mute · effects</span><span>Esc · M · B</span>
+      </div>
+      <div class="note" style="margin-top: 8px">Gamepad: left stick steer, RT/LT throttle/brake, RB/LB gears, Y view, X DRS, B overtake.</div>
+    </div>
+  </div>
+</div>
+
+<div id="hud" hidden>
+  <div id="timing" class="panel">
+    <div class="label" id="lapLabel">LAP 1</div>
+    <div class="num" id="lapTime">0:00.000</div>
+    <div class="row num"><span style="color: var(--dim)">DELTA</span><span id="delta">—</span></div>
+    <div class="row num"><span style="color: var(--dim)">LAST</span><span id="lastLap">--:--.---</span></div>
+    <div class="row num"><span style="color: var(--dim)">BEST</span><span id="bestLap" style="color: #c58bff">--:--.---</span></div>
+    <div id="tower" class="num" hidden></div>
+  </div>
+  <div id="mapBox" class="panel">
+    <svg viewBox="0 0 220 160" aria-hidden="true"><path id="mapPath" fill="none" stroke="#f3f4f6" stroke-width="4" stroke-linejoin="round"/><g id="mapDots"></g><circle id="mapCar" r="6" fill="#ff6a1a" stroke="#0b0d10" stroke-width="2"/></svg>
+    <div id="mapMeta" class="num"><span id="camLabel"></span><span id="lineLabel"></span><span id="boxLabel"></span><span id="fpsLabel"></span></div>
+  </div>
+  <div id="tyres" class="panel">
+    <div><div class="label" id="compound" style="margin-bottom: 6px">SOFT</div><div id="tyreGrid"><div></div><div></div><div></div><div></div></div></div>
+    <div id="stats" class="num"></div>
+  </div>
+  <div id="dash" class="panel">
+    <div id="leds"></div>
+    <div id="dashRow">
+      <div><div class="num" id="speed">0</div><div class="label" style="text-align: right">KM/H</div></div>
+      <div class="num" id="gear">1</div>
+      <div>
+        <div class="row num" style="font-size: 14px; color: var(--dim); letter-spacing: 0.1em"><span>ERS</span><span id="ersPct">100%</span></div>
+        <div id="ersBar"><i></i></div>
+        <div class="chips"><span id="cDrs">DRS</span><span id="cTc">TC</span><span id="cAbs">ABS</span></div>
+      </div>
+    </div>
+  </div>
+  <div id="lights" hidden><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="msg"></div>
+  <div id="overlay" hidden>
+    <div class="panel">
+      <h2 id="ovTitle">PAUSED</h2>
+      <div id="result" class="num" hidden></div>
+      <button class="main" id="ovResume" type="button">RESUME</button>
+      <button id="ovMenu" type="button">BACK TO MENU</button>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="vendor/Sky.js"></script>
+<script src="vendor/postfx.js"></script>
+<script src="vendor/car.js"></script>
+<script src="game.js"></script>
+<script>
+// Standalone page for the engine (GitHub Pages build). The Claude Design canvas in design/project is the richer UI:
+// it adds wing and brake-bias sliders and the lap telemetry screen.
+(function () {
+  const $ = (id) => document.getElementById(id), canvas = $('c'), A = window.ApexGP;
+  if (!A || !window.THREE) { $('status').textContent = 'The 3D engine did not load. Reload the page.'; return; }
+  const setup = { track: 'kestrel', camera: 0, mode: 'tt', laps: 3, skill: 'pro', compound: 'soft', tc: true, abs: true, autoGear: true, line: 'full', ghost: true, time: 'afternoon' };
+  const CAMS = ['CHASE', 'T-CAM', 'COCKPIT'];
+  let game = null, map = null, t = null;
+
+  function load() {
+    if (game) game.destroy();
+    try { game = A.create(canvas, { track: setup.track, onTelemetry: (tel) => { t = tel; hud(); } }); }
+    catch (e) { $('status').textContent = 'WebGL unavailable: ' + e.message; return; }
+    const tr = game.track; let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (let i = 0; i < tr.N; i++) { x0 = Math.min(x0, tr.px[i]); x1 = Math.max(x1, tr.px[i]); z0 = Math.min(z0, tr.pz[i]); z1 = Math.max(z1, tr.pz[i]); }
+    const sc = Math.min(200 / (x1 - x0), 140 / (z1 - z0)), ox = 10 + (200 - (x1 - x0) * sc) / 2, oz = 10 + (140 - (z1 - z0) * sc) / 2;
+    map = (x, z) => [ox + (x - x0) * sc, oz + (z - z0) * sc];
+    let d = ''; for (let i = 0; i < tr.N; i += 4) { const p = map(tr.px[i], tr.pz[i]); d += (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }
+    $('mapPath').setAttribute('d', d + 'Z');
+    $('trackLine').textContent = tr.name + ' · ' + (tr.L / 1000).toFixed(3) + ' km · ' + tr.turns + ' turns';
+    $('status').textContent = 'Circuit loaded. Press Enter or Go to grid.';
+  }
+
+  // menu: every option is a button that steps through its values
+  const cyc = (k, list) => () => { setup[k] = list[(list.indexOf(setup[k]) + 1) % list.length]; if (k === 'track') load(); menu(); };
+  function menu() {
+    const def = A.trackDef(setup.track), race = setup.mode === 'race', on = (v) => v ? 'ON' : 'OFF';
+    const session = [['Circuit', def.name.replace(/ (Circuit|Autodrome)$/, '').toUpperCase() + ' ›', cyc('track', A.TRACKS.map(x => x.id))], ['View', CAMS[setup.camera], cyc('camera', [0, 1, 2])],
+      ['Session', race ? 'RACE' : 'TIME TRIAL', cyc('mode', ['tt', 'race'])]];
+    if (race) session.push(['Race length', setup.laps + ' LAPS', cyc('laps', [3, 5, 10])], ['AI skill', setup.skill.toUpperCase(), cyc('skill', ['rookie', 'pro', 'elite'])]);
+    const car = [['Tyres', setup.compound.toUpperCase(), cyc('compound', ['soft', 'medium', 'hard'])], ['Traction control', on(setup.tc), cyc('tc', [true, false])], ['Anti-lock brakes', on(setup.abs), cyc('abs', [true, false])],
+      ['Gearbox', setup.autoGear ? 'AUTO' : 'MANUAL', cyc('autoGear', [true, false])], ['Racing line', setup.line.toUpperCase(), cyc('line', ['full', 'braking', 'off'])], ['Ghost car', on(setup.ghost), cyc('ghost', [true, false])],
+      ['Time of day', setup.time === 'golden' ? 'GOLDEN HOUR' : 'AFTERNOON', cyc('time', ['afternoon', 'golden'])]];
+    for (const [id, list] of [['sessionOpts', session], ['carOpts', car]]) {
+      const box = $(id); box.textContent = '';
+      for (const [label, value, fn] of list) { const b = document.createElement('button'); b.type = 'button'; b.className = 'opt'; b.append(label, Object.assign(document.createElement('b'), { textContent: value })); b.onclick = fn; box.append(b); }
+    }
+    $('trackNote').textContent = def.note + '. Cockpit is the first-person view.';
+    $('modeLine').textContent = race ? 'RACE · ' + setup.laps + ' LAPS · 6 CARS' : 'TIME TRIAL';
+  }
+  function start() {
+    if (!game) return;
+    game.begin(Object.assign({}, setup, { time: setup.time === 'golden' ? 7 : 38 })); game.camera(setup.camera); canvas.focus();
+  }
+  $('go').onclick = start;
+  $('ovResume').onclick = () => { game.resume(); canvas.focus(); };
+  $('ovMenu').onclick = () => game.menu();
+  addEventListener('keydown', (e) => {
+    if (!game || e.code === 'KeyT') return; // T is the canvas-only telemetry screen
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+    if (e.code === 'Enter' && (!t || t.phase === 'menu')) { start(); return; }
+    if (!e.repeat) game.key(e.code, true);
+  });
+  addEventListener('keyup', (e) => { if (game) game.key(e.code, false); });
+  addEventListener('blur', () => { if (game) game.pause(); });
+
+  // HUD: redrawn from each telemetry packet (15 a second)
+  for (let i = 0; i < 15; i++) $('leds').append(document.createElement('i'));
+  const leds = [...$('leds').children], tyreEls = [...$('tyreGrid').children], lightEls = [...$('lights').children];
+  const tcol = (T) => T < 70 ? '#6fb3ff' : T < 88 ? '#7fe3d8' : T <= 110 ? '#2bd96b' : T <= 125 ? '#f5c400' : '#ff5a4f';
+  const chip = (el, on, color) => { el.style.borderColor = on ? color : '#3a414c'; el.style.color = on ? '#0b0d10' : '#6b7380'; el.style.background = on ? color : 'transparent'; };
+  const hue = (h) => 'hsl(' + ((22 + h) % 360) + ' 85% 60%)';
+  function hud() {
+    const p = t.phase, driving = p !== 'menu';
+    $('menu').hidden = driving; $('hud').hidden = !driving;
+    if (!driving) return;
+    const r = t.race, cockpit = t.camera === 'COCKPIT';
+    $('lapLabel').textContent = r ? 'LAP ' + r.lap + '/' + r.laps + ' · P' + r.pos : 'LAP ' + Math.max(1, t.lap) + (t.invalid ? ' · INVALID' : '');
+    $('lapTime').textContent = t.lapTime; $('lastLap').textContent = t.lastLap; $('bestLap').textContent = t.bestLap;
+    $('delta').textContent = t.delta === null ? '—' : (t.delta > 0 ? '+' : '') + t.delta.toFixed(2); $('delta').style.color = t.delta === null ? '' : t.delta <= 0 ? '#2bd96b' : '#ff5a4f';
+    const tower = $('tower'); tower.hidden = !r;
+    if (r) { tower.textContent = ''; for (const c of r.cars) { const a = document.createElement('span'), b = document.createElement('span'), g = document.createElement('span'); a.textContent = c.pos; b.textContent = c.code; b.style.color = c.you ? 'var(--accent)' : hue(c.hue); g.textContent = c.gap; g.style.color = 'var(--dim)'; tower.append(a, b, g); } }
+    const m = map(t.mapX, t.mapZ); $('mapCar').setAttribute('cx', m[0]); $('mapCar').setAttribute('cy', m[1]);
+    const dots = $('mapDots'); dots.textContent = '';
+    if (r) for (const c of r.cars) if (!c.you) { const d = document.createElementNS('http://www.w3.org/2000/svg', 'circle'), q = map(c.x, c.z); d.setAttribute('cx', q[0]); d.setAttribute('cy', q[1]); d.setAttribute('r', 4); d.setAttribute('fill', hue(c.hue)); dots.append(d); }
+    $('camLabel').textContent = t.camera; $('lineLabel').textContent = 'LINE ' + t.line; $('boxLabel').textContent = t.gearbox; $('fpsLabel').textContent = t.fps + ' FPS';
+    $('compound').textContent = t.compound + ' TYRES';
+    [1, 0, 3, 2].forEach((w, k) => { const y = t.tyres[w], el = tyreEls[k]; el.style.background = tcol(y.t); el.innerHTML = y.t + '°<small>' + (100 - y.wear) + '%</small>'; });
+    $('stats').innerHTML = 'LAT ' + Math.abs(t.gLat).toFixed(1) + 'G<br>LON ' + Math.abs(t.gLong).toFixed(1) + 'G<br>DISCS ' + t.brakes[0] + '°<br>FUEL ' + t.fuel.toFixed(1) + ' KG';
+    $('dash').hidden = cockpit; // the steering wheel's own screen carries it
+    if (!cockpit) {
+      const lit = Math.round(t.rpmFrac * 15), shift = t.rpmFrac > 0.97;
+      leds.forEach((el, i) => { el.style.background = shift || i < lit ? (shift ? '#5b8cff' : i < 5 ? '#2bd96b' : i < 10 ? '#ff3b30' : '#5b8cff') : '#1b1f26'; });
+      $('speed').textContent = t.speed; $('gear').textContent = t.gear === '0' ? 'N' : t.gear;
+      $('ersPct').textContent = Math.round(t.ers * 100) + '%'; $('ersBar').firstElementChild.style.width = (t.ers * 100) + '%';
+      chip($('cDrs'), t.drs !== 'off', t.drs === 'open' ? '#2bd96b' : '#f5c400'); chip($('cTc'), t.tc, '#f5c400'); chip($('cAbs'), t.abs, '#f5c400');
+    }
+    $('lights').hidden = p !== 'lights'; lightEls.forEach((el, i) => el.classList.toggle('on', i < t.lights));
+    $('msg').textContent = t.message || '';
+    const done = p === 'finished' && r, ov = $('overlay'); ov.hidden = !(p === 'paused' || done);
+    if (!ov.hidden) {
+      $('ovTitle').textContent = done ? 'P' + r.pos + ' OF ' + r.n : 'PAUSED'; $('ovResume').hidden = !!done;
+      const res = $('result'); res.hidden = !done;
+      if (done) { res.textContent = ''; for (const c of r.cars) { const a = document.createElement('span'), b = document.createElement('span'), g = document.createElement('span'); a.textContent = c.pos; b.textContent = c.name || c.code; if (c.you) b.style.color = 'var(--accent)'; g.textContent = c.gap; res.append(a, b, g); } }
+    }
+  }
+  // deep link: ?track=callow&mode=race&cam=2&start=1
+  const q = new URLSearchParams(location.search);
+  if (A.TRACKS.some(x => x.id === q.get('track'))) setup.track = q.get('track');
+  if (q.get('mode') === 'race') setup.mode = 'race';
+  if (q.has('cam')) setup.camera = Math.min(2, Math.max(0, +q.get('cam') || 0));
+  load(); menu();
+  if (q.has('start')) setTimeout(start, 300);
+})();
+</script>
+</body>
+</html>
