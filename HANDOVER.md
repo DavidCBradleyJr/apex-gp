@@ -67,6 +67,10 @@ You're taking over **Apex GP**, a browser F1 time-trial simulator I'm building. 
   - Physics is not a factor: 4.4 ms per second of a six-car race.
   - The HUD shows FPS (top right) so frame rate can be reported from a real GPU; headless Swiftshader numbers mean nothing.
   - A cockpit dash cowl placed at 0.62 m ahead of the eye poked through the steering wheel's screen; it is at 0.76 now.
+- **Wheel split (`WHEEL_DEFS`):** measured from the GLB with a radius histogram. Tyre radius is 81.5 mm front and 85.5 mm rear in model units; nothing sits above the tyres. Three faults came from the old numbers, reported by the user as "wheel wells moving with the tyres":
+  - cut radii of 84 / 88 took slivers of bodywork beside each wheel, which span with it (now 82 / 86);
+  - the rear tread starts at z = 97 mm but the cut started at 125, so the inner 16 cm of the tyre stayed on the body while the rest span (the tyre band now has its own inner z);
+  - in the cockpit the model's front wheel shells span over the rig's own tyres (they are hidden for that render now).
 - **Scenery:** the dark rubber groove is two transparent ribbons on the racing line at y 0.006 and 0.008; tree crowns are three cones merged into one instanced geometry.
 - **Physics tuning lessons:**
   - Tyre heat coefficients: 0.2 heating / 6 cooling. 0.12 left tyres cold and slow; 0.3 overheated them.

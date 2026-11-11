@@ -1019,7 +1019,11 @@ function create(canvas, opts = {}) {
   // Cut the four wheels out of the single Tripo mesh so the fronts can steer and all four can roll.
   // ponytail: hub positions were measured from this particular Tripo mesh (raw model units: x, y, radius, inner |z|);
   // a regenerated car needs new numbers, and the split quietly does nothing if a wheel comes out empty.
-  const WHEEL_DEFS = [[0.305, -0.057, 0.084, 0.135], [-0.295, -0.053, 0.088, 0.125]];
+  // [hub x, hub y, cut radius, inner z]. The cut radius is the tyre's own (81.5 mm front, 85.5 mm rear in model units) plus half a millimetre:
+  // at 84 / 88 it also took slivers of the bodywork beside each wheel, which then span round with it.
+  // The last value is the inner z for the tyre itself (radius over 62 mm): the rear tread starts at z = 97 mm, well inboard of the
+  // hub cut, and leaving that band on the body tore the tyre into a still half and a spinning half.
+  const WHEEL_DEFS = [[0.305, -0.057, 0.082, 0.135, 0.135], [-0.295, -0.053, 0.086, 0.125, 0.096]];
   let wheels = [];
   const wheelsOf = (group) => { const out = []; group.traverse(o => { if (o.userData.wheel !== undefined) out.push({ steer: o, spin: o.children[0], glow: o.children[1], w: o.userData.wheel }); }); return out; };
   const glowMat = new THREE.MeshBasicMaterial({ color: 0xff5a10, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
@@ -1029,7 +1033,7 @@ function create(canvas, opts = {}) {
       const g = o.geometry, pos = g.attributes.position, idx = g.index.array;
       const which = (vi) => {
         const x = pos.getX(vi), y = pos.getY(vi), z = pos.getZ(vi);
-        for (let d = 0; d < 2; d++) { const [cx, cy, r, inner] = WHEEL_DEFS[d]; if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r && Math.abs(z) >= inner) return d * 2 + (z > 0 ? 0 : 1); }
+        for (let d = 0; d < 2; d++) { const [cx, cy, r, inner, tread] = WHEEL_DEFS[d], q = (x - cx) ** 2 + (y - cy) ** 2; if (q <= r * r && Math.abs(z) >= (q > 0.062 * 0.062 ? tread : inner)) return d * 2 + (z > 0 ? 0 : 1); }
         return -1;
       };
       const body = [], parts = [[], [], [], []]; // sim wheel order: front +z, front -z, rear +z, rear -z
@@ -1623,9 +1627,11 @@ function create(canvas, opts = {}) {
     // shadow follows car
     sunLight.position.set(sim.x, 0, sim.z).addScaledVector(sunDir, 200); sunLight.target.position.set(sim.x, 0, sim.z);
     const hideBody = rig.visible && poseCockpit(dtF) && bodyMeshes;
-    if (hideBody) for (const b of bodyMeshes) b.o.geometry = NO_GEO; // only for this render: clones of `car` must never inherit it
+    // only for this render: clones of `car` must never inherit it. The model's front wheels go too: only their outer halves are
+    // split off, and those shells spinning over the rig's whole tyres looked like wheel arches turning with the wheels.
+    if (hideBody) { for (const b of bodyMeshes) b.o.geometry = NO_GEO; for (const wh of wheels) if (wh.w < 2) wh.steer.visible = false; }
     if (composer && state.quality === 2) composer.render(); else renderer.render(scene, camera);
-    if (hideBody) for (const b of bodyMeshes) b.o.geometry = b.geo;
+    if (hideBody) { for (const b of bodyMeshes) b.o.geometry = b.geo; for (const wh of wheels) wh.steer.visible = true; }
     if (state.phase === 'run' && ++frameN && dtF > 1 / 40 && ++slowN > 110 && state.quality > 0) { setQuality(state.quality - 1); sim.flash('EFFECTS REDUCED FOR FRAME RATE', 2.5); frameN = slowN = 0; }
     if (frameN >= 180) frameN = slowN = 0; // 110 of 180 frames under 40 fps trips it
     let near = null;
