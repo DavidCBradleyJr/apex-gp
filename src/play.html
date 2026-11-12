@@ -23,7 +23,7 @@
   addEventListener('error', e => console.log('ERR', e.message, e.filename, e.lineno));
   // Plain local harness for the engine; the real UI lives in the Claude Design canvas (design/project/Main.dc.html).
   const q = new URLSearchParams(location.search), c = document.getElementById('c'), hud = document.getElementById('hud');
-  const game = ApexGP.create(c, { track: q.get('track'), onTelemetry: t => { if (q.has('log')) console.log('TEL', t.phase, t.speed, t.rpm, t.gear, t.mapX, t.mapZ); hud.textContent = `${t.phase}  ${t.speed} km/h  G${t.gear}  ${t.rpm} rpm  lap ${t.lap} ${t.lapTime}  best ${t.bestLap}  ${t.message}`; } });
+  const game = ApexGP.create(c, { track: q.get('track'), team: q.get('team'), onTelemetry: t => { if (q.has('log')) console.log('TEL', t.phase, t.speed, t.rpm, t.gear, t.mapX, t.mapZ); hud.textContent = `${t.phase}  ${t.speed} km/h  G${t.gear}  ${t.rpm} rpm  lap ${t.lap} ${t.lapTime}  best ${t.bestLap}  ${t.message}`; } });
   // ?pose=steer → parked with wheels on lock (menu orbit); ?pose=brake → 300 km/h approaching T1 with the racing line
   if (q.get('pose') === 'steer') { game.begin({}); Object.assign(game.state, { phase: 'paused', camMode: +(q.get('cam') || 2) }); game.sim.roadAngle = 0.3; }
   if (q.get('pose') === 'orbit') game.sim.roadAngle = +(q.get('d') || 0.45);

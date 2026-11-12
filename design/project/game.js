@@ -287,7 +287,7 @@ class Sim {
     const tr = this.track, i = Math.round(s / tr.ds) % tr.N;
     this.x = tr.px[i] - tr.tz[i] * d; this.z = tr.pz[i] + tr.tx[i] * d; this.psi = Math.atan2(tr.tz[i], tr.tx[i]);
     this.vx = 0; this.vz = 0; this.r = 0; this.gear = 1; this.rpm = CAR.idle; this.shiftT = 0;
-    this.thr = 0; this.brk = 0; this.steer = 0; this.alpha = [0, 0, 0, 0]; this.ax = 0; this.ay = 0;
+    this.thr = 0; this.brk = 0; this.steer = 0; this.aligningTorque = 0; this.alpha = [0, 0, 0, 0]; this.ax = 0; this.ay = 0;
     this.idx = i; this.s = s; this.d = d; this.drsOpen = false; this.overtake = false;
     this.lock = [0, 0, 0, 0]; this.spin = [0, 0, 0, 0]; this.surf = ['asphalt', 'asphalt', 'asphalt', 'asphalt'];
     this.tcActive = false; this.absActive = false; this.slipMax = 0; this.revT = 0; this.impact = 0; this.speed = 0; this.Fz = [0, 0, 0, 0]; this.tow = 0; this.gripK = 1;
@@ -315,11 +315,11 @@ class Sim {
     this.thr += clamp(inp.throttle - this.thr, -rate * dt * 1.6, rate * dt);
     this.brk += clamp(inp.brake - this.brk, -rate * dt * 2, rate * dt * 1.4);
     const sRate = inp.analog ? 12 : (Math.sign(inp.steer) !== Math.sign(this.steer) || inp.steer === 0 ? 5 : 2.6);
-    this.steer += clamp(inp.steer - this.steer, -sRate * dt, sRate * dt);
+    this.steer = inp.wheel ? clamp(inp.steer, -1, 1) : this.steer + clamp(inp.steer - this.steer, -sRate * dt, sRate * dt);
     // A key is all or nothing, so a full press asks for the lock that just saturates the front tyres at this speed: the
     // angle of the tightest arc the grip allows, plus the slip the tyres need to get there. A pad's stick is scaled by speed.
     const aero0 = aeroCoeffs(set, false), kDf = 0.5 * RHO * (aero0.clF + aero0.clR) / c.m;
-    const lock = inp.analog ? c.maxLock * Math.max(1 / (1 + v * v / 4900), 0.08) : Math.min(c.maxLock, c.wb * 1.75 * (G / Math.max(v * v, 1) + kDf) + 0.02);
+    const lock = inp.wheel ? c.maxLock : inp.analog ? c.maxLock * Math.max(1 / (1 + v * v / 4900), 0.08) : Math.min(c.maxLock, c.wb * 1.75 * (G / Math.max(v * v, 1) + kDf) + 0.02);
     const delta = this.steer * lock;
     this.roadAngle = delta;
     let thr = this.thr, brk = this.brk;
@@ -382,6 +382,7 @@ class Sim {
     if (this.ers <= 0) this.overtake = false;
 
     // --- tyres ---
+    this.aligningTorque = 0;
     let Fx = 0, Fy = 0, Mz = 0, heatAll = 0, slipMax = 0, gripK = 1;
     const loc = tr.locate(this.x, this.z, this.idx);
     const ti = loc.i, ntx = -tr.tz[ti], ntz = tr.tx[ti];
@@ -435,6 +436,8 @@ class Sim {
       } else latK = Math.sqrt(1 - ratio * ratio);
       fx -= Math.sign(vx) * Math.min(Math.abs(vx), 1) * Math.min(surf.drag + (surf.dragV || 0) * Math.abs(vx), 0.6) * Fz[w];
       const fy = -pacejka(this.alpha[w]) * Fmax * latK;
+      // Approximate pneumatic trail falls with slip, so understeer lightens the wheel.
+      if (front) this.aligningTorque -= fy * 0.055 * Math.exp(-((this.alpha[w] / 0.16) ** 2)) * Math.min(1, v / 3);
       slipMax = Math.max(slipMax, Math.abs(this.alpha[w]) / 0.09, this.lock[w] * 1.5, this.spin[w] * 1.5);
 
       const cx = fx * cs - fy * sn, cy = fx * sn + fy * cs;
@@ -564,6 +567,18 @@ function autopilot(sim, look = 8, pace = 1, off = 0, vCap = 1e9) {
   };
 }
 
+// Teams: id, name, body colour, accent colour. The 2026 grid by name, in colours that approximate each livery (no logos or
+// sponsors); 'apex' is the car model's own navy and orange. Every team's car drives the same.
+const TEAMS = [
+  ['apex', 'Apex GP', 0x1b2a6b, 0xff6a14], ['mclaren', 'McLaren', 0xff8000, 0x17181b], ['ferrari', 'Ferrari', 0xd40000, 0xf4f4f0],
+  ['redbull', 'Red Bull', 0x15224f, 0xe8112d], ['mercedes', 'Mercedes', 0xb9bfc4, 0x00d7b6], ['aston', 'Aston Martin', 0x00594f, 0xcedc00],
+  ['alpine', 'Alpine', 0x0a62d8, 0xff87bc], ['williams', 'Williams', 0x0b2f8f, 0x64c4ff], ['racingbulls', 'Racing Bulls', 0xf2f4fa, 0x1e41ff],
+  ['haas', 'Haas', 0xf0f0f0, 0xe6002b], ['audi', 'Audi', 0x9a9da1, 0xe00a1e], ['cadillac', 'Cadillac', 0x18181b, 0xf2f2f2],
+];
+const teamDef = (id) => TEAMS.find(t => t[0] === id) || TEAMS[0];
+// a team's colour for timing screens: the body colour, or the accent when the body is too dark to read on a dark panel
+const teamColor = (id) => { const [, , body, acc] = teamDef(id), lum = (c) => 0.3 * (c >> 16) + 0.59 * (c >> 8 & 255) + 0.11 * (c & 255); return '#' + (lum(body) > 70 ? body : lum(acc) > 70 ? acc : 0x8f9bb3).toString(16).padStart(6, '0'); };
+
 // ---------------- Race: the player plus AI cars on one track ----------------
 const DRIVERS = [ // fictional grid: code, name, livery hue shift (degrees) for the renderer
   ['VOS', 'M. Voss', 140], ['KAI', 'T. Kaine', 285], ['RYD', 'A. Ryder', 60], ['TAN', 'S. Tanaro', 200], ['MIL', 'J. Milano', 330],
@@ -577,13 +592,14 @@ class Race {
     this.track = track; this.laps = opts.laps || 3; this.t = 0; this.over = false; this.finishers = 0;
     const [base, power] = SKILL[opts.skill] || SKILL.pro, n = Math.min(opts.opponents === undefined ? 5 : opts.opponents, DRIVERS.length);
     const rnd = opts.rnd || Math.random;
+    const mine = teamDef(opts.team)[0], others = TEAMS.filter(t => t[0] !== 'apex' && t[0] !== mine); // the AI cars take the other teams
     this.cars = [];
     for (let k = 0; k < n; k++) {
       const [code, name, hue] = DRIVERS[k];
       // quickest AI at the front; each has its own pace and reaction time
-      this.cars.push({ code, name, hue, ai: true, sim: new Sim(track, Object.assign({}, playerSim.setup, { tc: true, abs: true, autoGear: true })), pace: base * (1 - 0.012 * k) * (0.995 + rnd() * 0.01), power, react: 0.18 + rnd() * 0.25, off: 0 });
+      this.cars.push({ code, name, hue, team: others[k % others.length][0], ai: true, sim: new Sim(track, Object.assign({}, playerSim.setup, { tc: true, abs: true, autoGear: true })), pace: base * (1 - 0.012 * k) * (0.995 + rnd() * 0.01), power, react: 0.18 + rnd() * 0.25, off: 0 });
     }
-    this.player = { code: 'YOU', name: 'You', hue: 0, ai: false, sim: playerSim, off: 0, pace: 0.9, power: 1 }; // pace is for its cool-down lap
+    this.player = { code: 'YOU', name: 'You', hue: 0, team: mine, ai: false, sim: playerSim, off: 0, pace: 0.9, power: 1 }; // pace is for its cool-down lap
     this.cars.push(this.player); // the player starts last
     track.rubber.fill(RUBBER0);
     this.cars.forEach((c, k) => {
@@ -1232,7 +1248,34 @@ function create(canvas, opts = {}) {
       });
     });
   }
-  let carReady = false;
+  let carReady = false, rigPaint = null, teamId = teamDef(opts.team)[0];
+  // Liveries: the model's texture is navy bodywork with orange accents over bare carbon. A team's car is the same texture with
+  // the navy swapped for its body colour and the orange for its accent, keeping each pixel's own shading.
+  const baseMaps = new Map(), liveries = new Map(); // car material -> its original texture; texture + team -> repainted texture
+  function liveryTex(tex, team) {
+    if (team[0] === 'apex' || !tex || !tex.image) return tex;
+    const key = tex.uuid + team[0]; if (liveries.has(key)) return liveries.get(key);
+    let out = tex;
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 1024; const x = c.getContext('2d');
+      x.drawImage(tex.image, 0, 0, 1024, 1024);
+      const img = x.getImageData(0, 0, 1024, 1024), d = img.data, bR = team[2] >> 16, bG = team[2] >> 8 & 255, bB = team[2] & 255, aR = team[3] >> 16, aG = team[3] >> 8 & 255, aB = team[3] & 255;
+      for (let i = 0; i < d.length; i += 4) {
+        const R = d[i], Gc = d[i + 1], B = d[i + 2], mx = Math.max(R, Gc, B), mn = Math.min(R, Gc, B); if (mx - mn < 0.25 * mx || mx < 24) continue; // carbon, tyres, metal
+        const k = Math.min(1, ((mx - mn) / mx - 0.25) / 0.2);
+        if (B === mx && B - R > 0.3 * mx) { const sh = Math.min(1.25, mx / 78); d[i] = R + (Math.min(255, bR * sh) - R) * k; d[i + 1] = Gc + (Math.min(255, bG * sh) - Gc) * k; d[i + 2] = B + (Math.min(255, bB * sh) - B) * k; } // navy -> body
+        else if (R === mx && R - B > 0.45 * mx && Gc < 0.8 * R) { const sh = mx / 240; d[i] = R + (Math.min(255, aR * sh) - R) * k; d[i + 1] = Gc + (Math.min(255, aG * sh) - Gc) * k; d[i + 2] = B + (Math.min(255, aB * sh) - B) * k; } // orange -> accent
+      }
+      x.putImageData(img, 0, 0);
+      out = new THREE.CanvasTexture(c); out.flipY = tex.flipY; out.encoding = tex.encoding; out.wrapS = tex.wrapS; out.wrapT = tex.wrapT; out.anisotropy = 4;
+    } catch (e) { /* canvas read-back blocked: keep the model's own colours */ }
+    liveries.set(key, out); return out;
+  }
+  function paintCar(id) {
+    teamId = teamDef(id)[0]; const team = teamDef(id);
+    car.traverse(o => { if (!o.isMesh || !o.material || !o.material.map || o.userData.glow) return; if (!baseMaps.has(o.material)) baseMaps.set(o.material, o.material.map); o.material.map = liveryTex(baseMaps.get(o.material), team); o.material.needsUpdate = true; });
+    if (rigPaint) rigPaint(team);
+  }
   function fallbackCar() {
     const body = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.5, 0.9), new THREE.MeshStandardMaterial({ color: 0x14204a, metalness: 0.4, roughness: 0.3 }));
     body.position.y = 0.45; car.add(body);
@@ -1264,7 +1307,7 @@ function create(canvas, opts = {}) {
       m.position.set(-ctr.x, -box.min.y, -ctr.z);
       m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (o.material) { o.material.envMapIntensity = 1.3; } } });
       splitWheels(m);
-      car.add(wrap); wheels = wheelsOf(car); carReady = true;
+      car.add(wrap); wheels = wheelsOf(car); carReady = true; paintCar(teamId);
     }, () => fallbackCar());
   } else fallbackCar();
 
@@ -1336,7 +1379,17 @@ function create(canvas, opts = {}) {
       put(M, strutG(v3(1.38, 0.32, s * 0.2), hubP(0.22), 0.011, 2.4), CARBON); put(M, strutG(v3(1.62, 0.56, s * 0.15), hubP(0.24), 0.009), CARBON);
       put(M, sphere(), SUIT, V(-0.02, -0.47, s * 0.27), null, [0.06, 0.06, 0.06]); // elbow
     }
-    bake(G, gloss, rig); bake(M, matte, rig);
+    const paintMesh = bake(G, gloss, rig); bake(M, matte, rig);
+    { // remember which of the baked bodywork is body colour and which is accent, so a team's livery can repaint it
+      const c = paintMesh.geometry.attributes.color, is = (i, hex) => Math.abs(c.getX(i) - (hex >> 16) / 255) + Math.abs(c.getY(i) - (hex >> 8 & 255) / 255) + Math.abs(c.getZ(i) - (hex & 255) / 255) < 0.004;
+      const body = [], acc = []; for (let i = 0; i < c.count; i++) { if (is(i, NAVY)) body.push(i); else if (is(i, ORANGE)) acc.push(i); }
+      rigPaint = (team) => {
+        // as dark as the baked colours are (see above): the model's navy and orange are the reference for how dark
+        const set = (list, hex, ref, k) => { const f = team[0] === 'apex' ? 0 : k, R = f ? (hex >> 16) / 255 * f : (ref >> 16) / 255, Gc = f ? (hex >> 8 & 255) / 255 * f : (ref >> 8 & 255) / 255, B = f ? (hex & 255) / 255 * f : (ref & 255) / 255; for (const i of list) c.setXYZ(i, R, Gc, B); };
+        set(body, team[2], NAVY, 0.3); set(acc, team[3], ORANGE, 0.7); c.needsUpdate = true;
+      };
+      rigPaint(teamDef(teamId));
+    }
 
     // front tyres: the model's wheel split keeps only the outer half of each tyre (the inner half belongs to the hidden body), so the
     // driver gets whole ones, with rounded shoulders, a wheel cover and the compound's colour band on the sidewall
@@ -1436,15 +1489,8 @@ function create(canvas, opts = {}) {
     return true;
   }
 
-  // race opponents: clones of the car (shared geometry) with the livery texture hue-shifted per driver
+  // race opponents: clones of the car (shared geometry), each in its team's livery
   let race = null, tt = null; const opp = [];
-  function hueTex(tex, hue) {
-    const c = document.createElement('canvas'); c.width = c.height = 1024; const x = c.getContext('2d');
-    x.filter = 'hue-rotate(' + hue + 'deg) saturate(1.7) brightness(1.2)'; x.drawImage(tex.image, 0, 0, 1024, 1024);
-    const t = new THREE.CanvasTexture(c);
-    t.flipY = tex.flipY; t.encoding = tex.encoding; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT; t.anisotropy = 4;
-    return t;
-  }
   function buildOpponents() {
     for (const c of race.cars) {
       if (!c.ai) continue;
@@ -1453,7 +1499,7 @@ function create(canvas, opts = {}) {
         if (!o.isMesh || o.userData.glow) return;
         if (!mats.has(o.material)) {
           const m = o.material.clone();
-          try { if (m.map && m.map.image) m.map = hueTex(m.map, c.hue); else if (o.material !== darkMat) m.color.offsetHSL(c.hue / 360, 0.2, 0.1); } catch (e) { m.color.offsetHSL(c.hue / 360, 0, 0); }
+          if (m.map) m.map = liveryTex(baseMaps.get(o.material) || m.map, teamDef(c.team)); else if (o.material !== darkMat) m.color.setHex(teamDef(c.team)[2]);
           mats.set(o.material, m);
         }
         o.material = mats.get(o.material);
@@ -1590,7 +1636,7 @@ function create(canvas, opts = {}) {
   const keys = new Set(), edges = [];
   let pad = { prev: [] };
   function readPad() {
-    const gp = navigator.getGamepads ? [...navigator.getGamepads()].find(Boolean) : null;
+    const gp = navigator.getGamepads ? [...navigator.getGamepads()].find(g => g && g.mapping === 'standard') : null;
     if (!gp) return null;
     const b = i => gp.buttons[i] ? gp.buttons[i].value : 0;
     const pressed = i => gp.buttons[i] && gp.buttons[i].pressed;
@@ -1606,6 +1652,7 @@ function create(canvas, opts = {}) {
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
   const nearCar = { rpm: 0, dist: 0, closing: 0, pan: 0 };
   const vF = new THREE.Vector3(), vC = new THREE.Vector3(), vT = new THREE.Vector3();
+  let hadWheel = false;
   let fps = 60, camPsi = sim.psi, headYaw = 0, shake = 0, last = performance.now(), acc = 0, telT = 0, raf = 0, orbit = 0;
   const DT = 1 / 240;
 
@@ -1655,7 +1702,7 @@ function create(canvas, opts = {}) {
   }
 
   function handleEdge(e) {
-    if (e === 'pause') { if (state.phase === 'run' || state.phase === 'lights') { state.phase = 'paused'; } else if (state.phase === 'paused') { state.phase = 'run'; state.tel = false; } else state.tel = false; return; }
+    if (e === 'pause') { if (opts.controls) opts.controls.stop(); if (state.phase === 'run' || state.phase === 'lights') { state.phase = 'paused'; } else if (state.phase === 'paused') { state.phase = 'run'; state.tel = false; } else state.tel = false; return; }
     if (e === 'tel') { showTel(!state.tel); return; }
     if (e === 'ghost') { state.ghost = !state.ghost; return; }
     if (e === 'fx') { gfxAuto = false; bench = null; setQuality(state.quality === 0 ? 2 : state.quality - 1); sim.flash('GRAPHICS ' + ['LOW', 'MEDIUM', 'HIGH'][state.quality], 1.5); return; }
@@ -1687,7 +1734,10 @@ function create(canvas, opts = {}) {
     if (now > last) fps += (1000 / (now - last) - fps) * 0.05;
     benchStep(now - last);
     const dtF = clamp((now - last) / 1000, 0, 0.05); last = now;
-    const padIn = readPad();
+    const wheelIn = opts.controls ? opts.controls.read(edges) : null;
+    if (hadWheel && !wheelIn && (state.phase === 'run' || state.phase === 'lights')) { state.phase = 'paused'; keys.clear(); }
+    hadWheel = !!wheelIn;
+    const padIn = wheelIn ? null : readPad();
     while (edges.length) handleEdge(edges.shift());
     const kb = {
       analog: false,
@@ -1695,7 +1745,7 @@ function create(canvas, opts = {}) {
       brake: keys.has('ArrowDown') || keys.has('KeyS') ? 1 : 0,
       steer: (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0) - (keys.has('ArrowLeft') || keys.has('KeyA') ? 1 : 0),
     };
-    let inp = kb;
+    let inp = wheelIn || kb;
     if (padIn && (Math.abs(padIn.steer) > 0.02 || padIn.throttle > 0.02 || padIn.brake > 0.02) && !kb.throttle && !kb.brake && !kb.steer) inp = padIn;
 
     if (state.phase === 'menu') {
@@ -1719,6 +1769,8 @@ function create(canvas, opts = {}) {
       acc += dtF; sim.impact = 0;
       while (acc >= DT) { race.step(DT, inp); acc -= DT; }
     }
+    if (opts.controls && (state.phase === 'paused' || state.phase === 'finished')) opts.controls.stop();
+    if (opts.controls) opts.controls.feedback(sim, !!wheelIn && state.phase === 'run');
     lightMats.forEach((m, i) => m.emissiveIntensity = i < state.lights ? 3.5 : 0);
 
     // car transforms
@@ -1783,7 +1835,7 @@ function create(canvas, opts = {}) {
     let fov = 62;
     shake = sim.surf.some(s => s !== 'asphalt') && sim.speed > 5 ? 0.04 : sim.speed / 95 * 0.006;
     rig.visible = false;
-    mapGroup.visible = state.phase === 'menu' && state.map && !state.poseCam;
+    mapGroup.visible = !!(state.phase === 'menu' && state.map && !state.poseCam); // a plain false: three.js draws anything whose `visible` is not exactly false
     if (mapGroup.visible) {
       const a = orbit * 1.6 + 0.9, e = mapC.e;
       camera.position.set(mapC.x + Math.cos(a) * e * 1.05, e * 0.72, mapC.z + Math.sin(a) * e * 1.05); camera.lookAt(mapC.x, 0, mapC.z);
@@ -1862,7 +1914,7 @@ function create(canvas, opts = {}) {
           const best = c.sim.lapsDone.reduce((m, l) => Math.min(m, l.time), 1e9);
           let gap = c === lead ? (c.finished ? fmtTime(c.finishT) : 'LEADER') : c.finished && lead.finished ? '+' + (c.finishT - lead.finishT).toFixed(3) : '+' + ((lead.progress - c.progress) / Math.max(c.sim.speed, 30)).toFixed(1);
           if (lead.finished && !c.finished) gap = 'ON TRACK';
-          return { code: c.code, name: c.name, pos: c.pos, you: !c.ai, hue: c.hue, x: c.sim.x, z: c.sim.z, gap, best: best < 1e9 ? fmtTime(best) : '' };
+          return { code: c.code, name: c.name, pos: c.pos, you: !c.ai, hue: c.hue, team: teamDef(c.team)[1], color: teamColor(c.team), x: c.sim.x, z: c.sim.z, gap, best: best < 1e9 ? fmtTime(best) : '' };
         }),
       };
     }
@@ -1903,7 +1955,7 @@ function create(canvas, opts = {}) {
       // time-trial bests survive new runs, and are parked while a race borrows the player's car
       if (!race) tt = { bestLap: sim.bestLap, bestRec: sim.bestRec, lastRec: sim.lastRec, refRec: sim.refRec, bestSectors: sim.bestSectors, lapsDone: sim.lapsDone };
       speedProfile(track, sim.setup); computeZones();
-      if (setup && setup.mode === 'race') race = new Race(track, sim, { laps: setup.laps, skill: setup.skill });
+      if (setup && setup.mode === 'race') race = new Race(track, sim, { laps: setup.laps, skill: setup.skill, team: teamId });
       else { race = null; sim.inRace = false; sim.resetSession(); Object.assign(sim, tt); }
       if (setup && setup.line) state.lineMode = Math.max(0, LINE_MODES.indexOf(String(setup.line).toUpperCase()));
       setTimeOfDay(setup && setup.time !== undefined ? setup.time : elevNow);
@@ -1916,23 +1968,24 @@ function create(canvas, opts = {}) {
     // traces for the telemetry screen: the lap just finished, and the best lap as it stood before it
     lapData() { return { ds: REC_DS, L: track.L, sectors: track.sectors, last: sim.lastRec, ref: sim.refRec }; },
     clearBest() { sim.bestRec = savedRec = null; sim.bestLap = null; sim.bestSectors = [null, null, null]; try { localStorage.removeItem(STORE); } catch (e) { /* nothing stored */ } },
-    pause() { if (state.phase === 'run' || state.phase === 'lights') state.phase = 'paused'; },
-    menu() { state.phase = 'menu'; state.tel = false; endRace(); sim.placeAt(track.L - 16, -2.5); },
+    pause() { if (opts.controls) opts.controls.stop(); keys.clear(); if (state.phase === 'run' || state.phase === 'lights') state.phase = 'paused'; },
+    menu() { if (opts.controls) opts.controls.stop(); state.phase = 'menu'; state.tel = false; endRace(); sim.placeAt(track.L - 16, -2.5); },
     camera(i) { state.camMode = i; },
+    team(id) { paintCar(id); }, // the player's car; the AI field takes the other teams at the next race
     // 'auto' or 0 / 1 / 2 (low / medium / high)
     graphics(mode) { gfxAuto = mode === 'auto'; if (gfxAuto) { setQuality(2); bench = { n: 0, ms: 0 }; } else { bench = null; setQuality(+mode); } },
     // the menu's 3D circuit map; shift moves the circuit sideways on screen (fraction of its size) to clear a menu panel
     overview(on, shift) { state.map = !!on; state.mapShift = shift || 0; },
     mute(m) { audio.muted = m; },
     destroy() { // frees the GPU side too: the UI destroys and re-creates the game to change circuit
-      cancelAnimationFrame(raf);
+      cancelAnimationFrame(raf); if (opts.controls) opts.controls.stop();
       scene.traverse(o => { if (o.geometry) o.geometry.dispose(); for (const m of [].concat(o.material || [])) { for (const k in m) if (m[k] && m[k].isTexture) m[k].dispose(); m.dispose(); } });
       mirrorRT.dispose(); dashTex.dispose();
       renderer.dispose(); if (audio.ac) audio.ac.close(); },
   };
 }
 
-const api = { TUNE, create, buildTrack, TRACKS, trackDef, speedProfile, Sim, Race, collide, autopilot, ghostPose, REC_DS, fmtTime, CIRCUIT, CAR, COMPOUNDS, DEFAULT_SETUP, surfaceAt };
+const api = { TUNE, create, buildTrack, TRACKS, TEAMS, teamDef, trackDef, speedProfile, Sim, Race, collide, autopilot, ghostPose, REC_DS, fmtTime, CIRCUIT, CAR, COMPOUNDS, DEFAULT_SETUP, surfaceAt };
 root.ApexGP = api;
 if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
