@@ -46,3 +46,50 @@ for (const speed of [0, 30, 80]) {
   if (speed > 0) assert(sim.aligningTorque < 0, 'aligning torque opposes positive steering');
 }
 console.log('Wheel calibration, paddle edges, transport expiry, FFB gating and linear steering: PASS');
+
+// Guided assignment keeps its draft separate and records endpoints rather than guessing polarity.
+const { RigWizard } = require('../src/rig.js');
+const rig = [{key:'wheel',name:'MOZA R3',axes:[0.03],buttons:[0,0]}, {key:'pedals',name:'Pedals',axes:[1,-1],buttons:[]}];
+const w = new RigWizard();
+const confirm = () => assert(w.confirm(rig), 'step ' + w.index + ' should be confirmable');
+confirm(); // centered baseline
+rig[0].axes[0] = 0.05; w.observe(rig); assert(!w.ready(rig), 'ignore center jitter');
+rig[0].axes[0] = 1; w.observe(rig); assert(w.ready(rig));
+rig[0].axes[0] = 0.03; w.observe(rig); assert(w.ready(rig), 'remember the endpoint after release');
+confirm();
+rig[0].axes[0] = 1; w.observe(rig); assert(!w.ready(rig), 'right lock must be on the other side of center');
+rig[0].axes[0] = -1; confirm();
+assert(!w.ready(rig), 'must return to center');
+rig[0].axes[0] = 0.03; confirm();
+assert.equal(normalize(w.preview().steer, 1, true), -1, 'inverted steering still previews left correctly');
+confirm(); // steering test
+confirm(); // throttle rest
+rig[1].axes[0] = -1; confirm();
+rig[1].axes[0] = 0; assert.equal(normalize(w.draft.throttle, 0), 0.5);
+rig[1].axes[0] = 1; confirm(); // throttle test
+confirm(); // brake rest
+rig[1].axes[1] = 0.6; confirm();
+assert.equal(normalize(w.draft.brake, 0.6), 1);
+rig[1].axes[1] = -1; rig[0].buttons[0] = 1;
+confirm(); // brake test; don't bind a button already held on entry
+w.observe(rig); assert(!w.ready(rig));
+rig[0].buttons[0] = 0; w.observe(rig); rig[0].buttons[0] = 1; w.observe(rig);
+rig[0].buttons[0] = 0; w.observe(rig); assert(w.ready(rig), 'remember the paddle after release'); confirm();
+rig[0].buttons[0] = 1; w.observe(rig); assert(!w.ready(rig), 'do not reuse shift-up for shift-down');
+rig[0].buttons[0] = 0; w.observe(rig); rig[0].buttons[1] = 1; confirm();
+for (let i = 0; i < 3; i++) w.skip(rig);
+assert.equal(w.step[1], 'review'); assert(mappedInput(w.draft, rig));
+assert(!w.ready([rig[0]]), 'cannot save disconnected pedals'); confirm();
+assert.equal(w.draft.up.button, 0); assert.equal(w.draft.down.button, 1);
+
+const ambiguous = new RigWizard(); ambiguous.draft.steer = {device:'wheel',axis:0,left:-1,center:0,right:1};
+ambiguous.go(6, rig); rig[1].axes = [-1,1]; ambiguous.observe(rig);
+assert(!ambiguous.ready(rig)); assert(ambiguous.problem.includes('More than one'));
+ambiguous.retry(rig); assert.equal(ambiguous.step[1], 'rest', 'retry must recapture released pedals');
+const combined = new RigWizard(); combined.draft = {steer:{device:'wheel',axis:0,left:-1,center:0,right:1},throttle:{device:'pedals',axis:0,rest:0,full:1}};
+rig[1].axes = [0,0]; combined.go(9, rig); rig[1].axes[0] = 1; combined.observe(rig); assert(!combined.ready(rig), 'reject pressing the throttle for brake');
+rig[1].axes[0] = 0; combined.go(9,rig); rig[1].axes[0] = -1; combined.observe(rig); assert(combined.ready(rig), 'allow opposite halves of a combined pedal axis');
+combined.draft.brake = {...combined.candidate}; combined.go(16,rig); combined.retry(rig); assert.deepEqual(combined.draft, {}, 'restart review from a clean draft');
+controls.wizard = new RigWizard(); controls.ffb = true; controls.suspended = false; controls.feedback({aligningTorque:1000},true);
+assert.equal(controls.force,0); assert.equal(controls.read([]),null,'wizard suppresses driving input');
+console.log('Guided setup: endpoint detection, confirmation, ambiguity, combined pedals, button release, duplicate rejection and safety: PASS');

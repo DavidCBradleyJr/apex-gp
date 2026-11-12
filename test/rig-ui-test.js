@@ -24,6 +24,7 @@ async (page) => {
     stage = 'open calibration';
     await test.getByText('SIM RIG · WHEELS, PEDALS & FFB', { exact: true }).click();
     await test.waitForFunction(() => document.querySelector('#rigControls [role=status]').textContent.includes('MOZA R9'), null, {timeout:10000});
+    await test.getByText('Advanced manual bindings', {exact:true}).click();
     const selects = test.locator('#rigControls select');
     stage = 'axis calibration';
     const binding = (device, axis) => JSON.stringify({ device, axis });
@@ -31,10 +32,10 @@ async (page) => {
     const position = async (device, axis, value) => {
       devices[device].axes[axis] = value;
       const label = device === 0 ? 'Steering' : axis === 0 ? 'Throttle' : 'Brake';
-      await test.waitForFunction(({label, value}) => [...document.querySelectorAll('#rigControls > div')].some(e => e.querySelector('label')?.textContent.startsWith(label) && e.querySelector('output')?.textContent.startsWith('Raw ' + value.toFixed(3))), { label, value }, {timeout:10000});
+      await test.waitForFunction(({label, value}) => [...document.querySelectorAll('#rigControls .rig-manual > div')].some(e => e.querySelector('label')?.textContent.startsWith(label) && e.querySelector('output')?.textContent.startsWith('Raw ' + value.toFixed(3))), { label, value }, {timeout:10000});
     };
     // Find each axis row by its label.
-    const row = key => test.locator('#rigControls > div').filter({ has: test.locator('label').filter({ hasText: key }) });
+    const row = key => test.locator('#rigControls .rig-manual > div').filter({ has: test.locator('label').filter({ hasText: key }) });
     await position(0, 0, -1); await row('Steering').getByRole('button', {name: 'Set left', exact:true}).click();
     await position(0, 0, 1); await row('Steering').getByRole('button', {name: 'Set right', exact:true}).click();
     await position(0, 0, 0); await row('Steering').getByRole('button', {name: 'Set center', exact:true}).click();
