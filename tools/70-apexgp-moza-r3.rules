@@ -1,0 +1,2 @@
+# Allow the active desktop user to access the Moza R3 through WebHID.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="346e", ATTRS{idProduct}=="0005", TAG+="uaccess"

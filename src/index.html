@@ -192,6 +192,7 @@
 <script src="vendor/postfx.js"></script>
 <script src="vendor/car.js"></script>
 <script src="game.js"></script>
+<script src="webhid-ffb.js"></script>
 <script src="rig.js"></script>
 <script>
 // Standalone page for the engine (GitHub Pages build). The Claude Design canvas in design/project is the richer UI:
@@ -284,7 +285,7 @@
   const hue = (h) => 'hsl(' + ((22 + h) % 360) + ' 85% 60%)';
   function hud() {
     const rigWheel = controls.allDevices().find(d => controls.profile.steer && d.key === controls.profile.steer.device);
-    $('ovRigResume').hidden = !(t.phase === 'paused' && controls.enabled && controls.bridge && rigWheel && rigWheel.ffb && ApexRig.mappedInput(controls.profile, controls.allDevices()));
+    $('ovRigResume').hidden = !(t.phase === 'paused' && controls.enabled && controls.ffbAvailable(rigWheel) && ApexRig.mappedInput(controls.profile, controls.allDevices()));
     const p = t.phase, driving = p !== 'menu';
     $('menu').hidden = driving; $('hud').hidden = !driving;
     const cam = CAMS.indexOf(t.camera); if (driving && cam >= 0 && cam !== setup.camera) { setup.camera = cam; save(); menu(); } // C while driving is remembered

@@ -1,6 +1,7 @@
 /* Wheel calibration and optional localhost SDL2 transport. No controller layouts are guessed. */
 (function (root) {
 'use strict';
+const { MozaHidFfb } = typeof module !== 'undefined' ? require('./webhid-ffb.js') : root.ApexHID;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const axis = (binding, devices) => {
   if (!binding) return null;
@@ -130,6 +131,7 @@ class RigControls {
     this.devices = []; this.profile = {}; this.enabled = true; this.ffb = false; this.strength = 0.25; this.invert = false;
     this.bridge = false; this.updated = 0; this.feedbackAt = 0; this.prev = {}; this.force = 0; this.active = false; this.error = '';
     this.suspended = false;
+    this.hid = new MozaHidFfb(error => { this.error = error; this.stop(); });
     try { const saved = JSON.parse(localStorage.getItem('apexgp.rig.v1')); if (saved && typeof saved === 'object' && !Array.isArray(saved)) this.profile = saved; } catch (_) { /* first calibration */ }
     this.block = () => { this.suspended = true; this.stop(); };
     this.focus = () => { if (!document.hidden) this.suspended = false; };
@@ -155,14 +157,16 @@ class RigControls {
     const timeout = setTimeout(() => abort.abort(), 1000);
     try {
       const response = await fetch('/api/rig', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device: this.target, force: this.force, active: this.active && !this.suspended && performance.now() - this.feedbackAt < 100 }), signal: abort.signal });
+        body: JSON.stringify({ device: this.target, force: this.bridge ? this.force : 0, active: this.bridge && this.active && !this.suspended && performance.now() - this.feedbackAt < 100 }), signal: abort.signal });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Bridge: ' + response.status);
       if (!Array.isArray(data.devices)) throw new Error('Wheel bridge not running');
+      if (!this.bridge && this.hid.ready) { this.stop(); await this.hid.disconnect(); }
       this.devices = data.devices; this.error = data.error || ''; this.updated = performance.now(); this.bridge = true;
     } catch (e) {
-      this.devices = []; this.bridge = false; this.ffb = false; this.active = false;
-      this.error = e.message + '. For steering FFB, run tools/rig-bridge.py and open its local game URL.';
+      if (this.bridge) this.stop();
+      this.devices = []; this.bridge = false;
+      if (!this.hid.ready) this.error = 'Local bridge unavailable. Connect browser FFB for a Moza R3, or start the local bridge.';
     } finally {
       clearTimeout(timeout);
       setTimeout(() => this.poll(), this.bridge ? 16 : 2000);
@@ -182,16 +186,18 @@ class RigControls {
     }
     return input;
   }
+  ffbAvailable(wheel, devices = this.allDevices()) { return this.bridge ? !!wheel?.ffb : this.hid.matches(wheel, devices); }
   feedback(sim, active) {
     this.feedbackAt = performance.now();
     const d = this.allDevices().find(d => this.profile.steer && d.key === this.profile.steer.device);
-    this.active = !!(active && !this.wizard && this.enabled && this.ffb && this.bridge && d && d.ffb && !this.suspended);
+    this.active = !!(active && !this.wizard && this.enabled && this.ffb && this.ffbAvailable(d) && !this.suspended);
     this.target = d ? d.id : null;
     // Aligning torque comes from the front tyres; grip loss lightens the wheel. Never substitute rumble.
     const force = Number.isFinite(sim.aligningTorque) ? sim.aligningTorque / 1000 : 0;
     this.force = this.active ? clamp(force, -1, 1) * this.strength * (this.invert ? -1 : 1) : 0;
+    if (!this.bridge) { if (this.active) this.hid.write(this.force); else this.hid.stop(); }
   }
-  stop() { this.force = 0; this.active = false; this.ffb = false; }
+  stop() { this.force = 0; this.active = false; this.ffb = false; this.hid.stop(); }
   save() {
     try { localStorage.setItem('apexgp.rig.v1', JSON.stringify(this.profile)); return true; }
     catch (_) { this.error = 'Calibration works this session, but browser storage is unavailable.'; return false; }
@@ -306,9 +312,17 @@ class RigControls {
       select.onchange = () => { this.stop(); this.profile[key] = select.value ? JSON.parse(select.value) : null; this.save(); };
       fields.push({ select, key, type: 'button' });
     }
+    const connectHid = make('button', 'Connect browser FFB'); connectHid.type = 'button'; connectHid.className = 'opt';
+    connectHid.onclick = async () => {
+      this.stop();
+      try { if (this.hid.ready) await this.hid.disconnect(); else await this.hid.connect(); this.error = ''; }
+      catch (e) { this.error = e.name === 'NotFoundError' ? 'No wheel selected. You can connect it when ready.' : e.message + ' On Linux, check HID device access permissions.'; }
+      refresh();
+    };
+    make('p', 'Direct browser FFB: Moza R3 on desktop Chrome/Edge. Choose the wheel in the browser prompt, then explicitly enable Steering FFB. Other wheelbases can use the local bridge.');
     const ffb = make('button', 'Steering FFB: OFF'); ffb.type = 'button'; ffb.className = 'opt';
     ffb.onclick = () => { this.ffb = !this.ffb; ffb.textContent = 'Steering FFB: ' + (this.ffb ? 'ON' : 'OFF'); };
-    const strengthLabel = make('label', 'FFB strength (bridge caps base output at 20%)'), strength = make('input', '', strengthLabel);
+    const strengthLabel = make('label', 'FFB strength (maximum 20% of base output)'), strength = make('input', '', strengthLabel);
     strength.type = 'range'; strength.min = '0'; strength.max = '100'; strength.value = '25';
     const strengthValue = make('output', '25%', strengthLabel);
     strength.oninput = () => { this.strength = +strength.value / 100; strengthValue.textContent = strength.value + '%'; };
@@ -350,10 +364,12 @@ class RigControls {
       const input = mappedInput(this.profile, devices), wheel = devices.find(d => this.profile.steer && d.key === this.profile.steer.device);
       const names = devices.map(d => d.name).join(', ');
       const nextStatus = (devices.length ? 'Detected: ' + names : 'No wheel detected. Connect it and move a control.') +
-        (input ? ' · Calibration ready.' : ' · Calibration required.') + (this.bridge ? ' · Local bridge connected.' : ' · Browser input only; steering FFB needs the local bridge.') + (this.error ? ' ' + this.error : '');
+        (input ? ' · Calibration ready.' : ' · Calibration required.') + (this.bridge ? ' · Local bridge connected.' : this.hid.ready ? ' · Browser FFB connected to ' + this.hid.device.productName + '.' : ' · Browser input. Connect browser FFB or use the local bridge for steering torque.') + (this.error ? ' ' + this.error : '');
       if (nextStatus !== lastStatus) { status.textContent = nextStatus; lastStatus = nextStatus; }
-      ffb.disabled = !!this.wizard || !(this.bridge && wheel && wheel.ffb && input);
-      ffb.textContent = 'Steering FFB: ' + (this.ffb ? 'ON' : 'OFF') + (wheel && !wheel.ffb ? ' (driver unavailable)' : '');
+      connectHid.disabled = this.hid.connecting || this.bridge || !!this.wizard || !this.hid.available;
+      connectHid.textContent = this.hid.connecting ? 'Connecting browser FFB…' : this.hid.ready ? 'Disconnect browser FFB' : this.hid.available ? 'Connect browser FFB' : 'Browser FFB needs Chrome/Edge';
+      ffb.disabled = !!this.wizard || !(this.ffbAvailable(wheel, devices) && input);
+      ffb.textContent = 'Steering FFB: ' + (this.ffb ? 'ON' : 'OFF') + (wheel && !this.ffbAvailable(wheel, devices) ? ' (not connected for this wheel)' : '');
       for (const { key, live, points } of rows) {
         const b = this.profile[key], v = axis(b, devices);
         live.textContent = (v === null ? 'Disconnected / unbound' : 'Raw ' + v.toFixed(3)) + ' · ' + points.map(p => p + ': ' + (b && Number.isFinite(b[p]) ? b[p].toFixed(2) : '—')).join(' / ') +

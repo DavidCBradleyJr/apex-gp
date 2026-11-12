@@ -1,0 +1,439 @@
+{
+  "vendorId": 13422,
+  "productId": 5,
+  "productName": "Gudsen R3 Racing Wheel and Pedals",
+  "collections": [
+    {
+      "usagePage": 1,
+      "usage": 4,
+      "children": [],
+      "outputReports": [
+        {
+          "reportId": 1,
+          "items": [
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 10,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983074
+              ]
+            },
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 11,
+              "isConstant": false,
+              "isArray": true,
+              "usages": [
+                983078,
+                983079,
+                983088,
+                983089,
+                983090,
+                983091,
+                983092,
+                983104,
+                983105,
+                983106,
+                983107
+              ]
+            },
+            {
+              "reportSize": 16,
+              "reportCount": 4,
+              "logicalMinimum": 0,
+              "logicalMaximum": 32767,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983120,
+                983124,
+                983121,
+                983207
+              ]
+            },
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 255,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983122
+              ]
+            },
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 8,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983123
+              ]
+            },
+            {
+              "reportSize": 1,
+              "reportCount": 2,
+              "logicalMinimum": 0,
+              "logicalMaximum": 1,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                65584,
+                65585
+              ]
+            },
+            {
+              "reportSize": 1,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 1,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983126
+              ]
+            },
+            {
+              "reportSize": 1,
+              "reportCount": 5,
+              "logicalMinimum": 0,
+              "logicalMaximum": 1,
+              "isConstant": true,
+              "isArray": false,
+              "usages": []
+            },
+            {
+              "reportSize": 16,
+              "reportCount": 2,
+              "logicalMinimum": 0,
+              "logicalMaximum": 36000,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                655361,
+                655362
+              ]
+            },
+            {
+              "reportSize": 16,
+              "reportCount": 2,
+              "logicalMinimum": 0,
+              "logicalMaximum": 32765,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                655361,
+                655362
+              ]
+            }
+          ]
+        },
+        {
+          "reportId": 2,
+          "items": [
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 10,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983074
+              ]
+            },
+            {
+              "reportSize": 16,
+              "reportCount": 2,
+              "logicalMinimum": 0,
+              "logicalMaximum": 32767,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983131,
+                983133
+              ]
+            },
+            {
+              "reportSize": 32,
+              "reportCount": 2,
+              "logicalMinimum": 0,
+              "logicalMaximum": 32767,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983132,
+                983134
+              ]
+            }
+          ]
+        },
+        {
+          "reportId": 5,
+          "items": [
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 10,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983074
+              ]
+            },
+            {
+              "reportSize": 16,
+              "reportCount": 1,
+              "logicalMinimum": -32768,
+              "logicalMaximum": 32767,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983152
+              ]
+            }
+          ]
+        },
+        {
+          "reportId": 10,
+          "items": [
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 10,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983074
+              ]
+            },
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 3,
+              "isConstant": false,
+              "isArray": true,
+              "usages": [
+                983161,
+                983162,
+                983163
+              ]
+            },
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 255,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983164
+              ]
+            }
+          ]
+        },
+        {
+          "reportId": 11,
+          "items": [
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 10,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983074
+              ]
+            }
+          ]
+        },
+        {
+          "reportId": 12,
+          "items": [
+            {
+              "reportSize": 1,
+              "reportCount": 8,
+              "logicalMinimum": 1,
+              "logicalMaximum": 6,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983191,
+                983192,
+                983193,
+                983194,
+                983195,
+                983196
+              ]
+            }
+          ]
+        },
+        {
+          "reportId": 13,
+          "items": [
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 255,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983166
+              ]
+            }
+          ]
+        }
+      ],
+      "featureReports": [
+        {
+          "reportId": 17,
+          "items": [
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 11,
+              "isConstant": false,
+              "isArray": true,
+              "usages": [
+                983078,
+                983079,
+                983088,
+                983089,
+                983090,
+                983091,
+                983092,
+                983104,
+                983105,
+                983106,
+                983107
+              ]
+            },
+            {
+              "reportSize": 10,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 511,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                65595
+              ]
+            },
+            {
+              "reportSize": 6,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 511,
+              "isConstant": true,
+              "isArray": true,
+              "usages": []
+            }
+          ]
+        },
+        {
+          "reportId": 18,
+          "items": [
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 10,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983074
+              ]
+            },
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 3,
+              "isConstant": false,
+              "isArray": true,
+              "usages": [
+                983180,
+                983181,
+                983182
+              ]
+            },
+            {
+              "reportSize": 16,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 65535,
+              "isConstant": false,
+              "isArray": true,
+              "usages": [
+                983212
+              ]
+            }
+          ]
+        },
+        {
+          "reportId": 19,
+          "items": [
+            {
+              "reportSize": 16,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 65535,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983168
+              ]
+            },
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 255,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983171
+              ]
+            },
+            {
+              "reportSize": 1,
+              "reportCount": 2,
+              "logicalMinimum": 0,
+              "logicalMaximum": 1,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983209,
+                983210
+              ]
+            },
+            {
+              "reportSize": 6,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 1,
+              "isConstant": true,
+              "isArray": false,
+              "usages": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
