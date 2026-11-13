@@ -23,7 +23,10 @@
   const render = async (id, options = {}) => {
     const ac = new OfflineAudioContext(2, rate * 0.65, rate), audio = new EngineAudio(), sim = Object.assign(state(id), options.sim);
     audio.init(ac); audio.muted = !!options.muted;
+    if (options.synthOnly) audio.v12Loading = Promise.resolve(false);
+    else if (id === 'v12') check(await audio.loadV12(), 'V12 recording did not load');
     audio.update(sim, options.on !== false, options.near || null, !!options.inside);
+    if (options.recordedOnly) { audio.synthG.gain.cancelScheduledValues(0); audio.synthG.gain.setValueAtTime(0, 0); }
     const buffer = await ac.startRendering();
     return { audio, sim, buffer, ...stats(buffer) };
   };
@@ -53,9 +56,73 @@
   check((await render('v10', {on:false})).peak < 1e-6, 'inactive session must be silent');
   check((await render('bad-saved-era')).audio.era.id === 'v6', 'invalid era fallback');
 
+  // Prove the recording is audible and follows RPM, rather than repeating a pass-by.
+  const dominantBank = (buffer, expected) => {
+    const d = buffer.getChannelData(0), start = rate * 0.3, n = 4096;
+    let best = 0, bestHz = 0;
+    for (let hz = expected * 0.85; hz <= expected * 1.15; hz += 2) {
+      const k = 2 * Math.cos(2 * Math.PI * hz / rate); let a = 0, b = 0;
+      for (let i = 0; i < n; i++) { const v = d[start + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1))) + k * a - b; b = a; a = v; }
+      const power = a * a + b * b - k * a * b;
+      if (power > best) { best = power; bestHz = hz; }
+    }
+    return bestHz;
+  };
+  for (const rpm of [9500, 11000, CAR.limiter]) {
+    const out = await render('v12', {sim:{rpm},recordedOnly:true});
+    const hz = expected(ENGINE_ERAS.find(e => e.id === 'v12'), rpm) / 2;
+    const measured = dominantBank(out.buffer, hz);
+    check(out.rms > 0.025 && out.peak < 0.95, 'V12 recording itself must be audible and unclipped');
+    check(Math.abs(measured / hz - 1) < 0.045, 'V12 recorded pitch does not follow RPM: ' + measured + ' vs ' + hz);
+    lines.push('V12 recording only: ' + rpm + ' drivetrain RPM, measured bank ' + measured.toFixed(0) + ' Hz, RMS ' + out.rms.toFixed(3));
+  }
+  for (const sim of [{rpm:CAR.idle,thr:1}, {rpm:12000,thr:0}]) {
+    const out = await render('v12', {sim,recordedOnly:true});
+    check(out.peak < 1e-6, 'unrecorded idle/coasting must not replay loaded samples');
+  }
+  check((await render('v12', {muted:true})).peak < 1e-6, 'mute must silence recorded audio');
+  check((await render('v12', {on:false})).peak < 1e-6, 'inactive recording must be silent');
+  check((await render('v12', {sim:{shiftT:0.045}})).rms < (await render('v12')).rms * 0.3, 'gear cut must duck the recording');
+
+  // A missing file, corrupt decode or network error keeps a playable synth and never retries every frame.
+  const realFetch = window.fetch;
+  for (const failure of ['http','decode','network']) {
+    const context = new OfflineAudioContext(2, rate * 0.65, rate), fallback = new EngineAudio();
+    fallback.init(context); let calls = 0;
+    try {
+      window.fetch = async () => { calls++; if (failure === 'network') throw TypeError('test network failure'); return new Response('invalid WAV', {status:failure === 'http' ? 404 : 200}); };
+      fallback.update(state('v12'), true, null, false);
+      check(await fallback.v12Loading === false && !fallback.v12Loops, 'failed sample must retain synthesis');
+      fallback.update(state('v12'), true, null, false);
+      check(calls === 2, 'failed sample load retried every frame');
+      check(stats(await context.startRendering()).rms > 0.02, 'fallback must remain audible');
+    } finally { window.fetch = realFetch; }
+  }
+  const lateContext = new OfflineAudioContext(2, rate * 0.65, rate), late = new EngineAudio(), releases = [];
+  late.init(lateContext);
+  try {
+    window.fetch = (...args) => new Promise(resolve => releases.push(() => resolve(realFetch(...args))));
+    late.update(state('v12'), true, null, false);
+    check(!late.v12Loops && late.synthG.gain.value === 1, 'loading must not block or mute the synth');
+    releases.forEach(release => release());
+    check(await late.v12Loading, 'delayed sample load failed');
+    check(late.v12Loops.every(loop => loop.gain.gain.value === 0), 'late samples must start silent');
+    late.update(state('v12'), true, null, false);
+    check(stats(await lateContext.startRendering()).rms > 0.025, 'delayed samples did not blend in');
+  } finally { window.fetch = realFetch; }
+  const closedContext = new AudioContext(), closed = new EngineAudio(), closeReleases = [];
+  closed.init(closedContext);
+  try {
+    window.fetch = (...args) => new Promise(resolve => closeReleases.push(() => resolve(realFetch(...args))));
+    const loading = closed.loadV12();
+    await closedContext.close(); closeReleases.forEach(release => release());
+    check(await loading === false && !closed.v12Loops, 'destroyed audio must not create late sources');
+  } finally { window.fetch = realFetch; }
+  lines.push('PASS: V12 recorded pitch/levels, synthetic idle/coast, mute/pause, delayed loading and HTTP/decode/network fallback.');
+
   // Exercise shifts, limiter, impacts, surface effects, pause/resume and era changes on one running graph.
-  const ac = new OfflineAudioContext(2, rate * 2.2, rate), audio = new EngineAudio(), sim = state('v10');
-  audio.init(ac); audio.update(sim, true, null, false);
+  const ac = new OfflineAudioContext(2, rate * 2.2, rate), audio = new EngineAudio(), sim = state('v12');
+  audio.init(ac); check(await audio.loadV12(), 'transient V12 load'); audio.update(sim, true, null, false);
   const steps = [0.2,0.3,0.5,0.65,0.85,1.05,1.25,1.5,1.8].map(t => ac.suspend(t));
   const rendering = ac.startRendering();
   for (let i = 0; i < steps.length; i++) {
@@ -65,16 +132,18 @@
     if (i === 2) { sim.gear = 4; sim.thr = 0; sim.brk = 0.9; sim.rpm = 11000; }
     if (i === 3) { sim.rpm = CAR.limiter; sim.thr = 1; sim.brk = 0; }
     if (i === 4) { sim.impact = 12; sim.speed = 70; sim.surf = ['kerb','gravel']; sim.slipMax = 1.5; }
-    if (i === 6) { sim.setup.engineEra = 'v12'; sim.impact = 0; sim.gear = 1; }
+    if (i === 6) { sim.setup.engineEra = 'v10'; sim.impact = 0; sim.gear = 1; }
     if (i === 7) audio.muted = true;
-    if (i === 8) audio.muted = false;
+    if (i === 8) { audio.muted = false; sim.setup.engineEra = 'v12'; }
     audio.update(sim, i !== 5, null, false);
     if (i === 2) check(audio.blipT > ac.currentTime, 'downshift throttle blip missing');
-    if (i === 6) check(audio.blipT === 0 && audio.era.id === 'v12', 'resume must not invent a downshift');
+    if (i === 6) check(audio.blipT === 0 && audio.era.id === 'v10', 'resume must not invent a downshift');
+    if (i === 7) check(audio.v12Loops.every(loop => loop.gain.gain.value < 0.06), 'samples did not fade out after changing era');
     await ac.resume();
   }
   const transient = stats(await rendering, 0, 2.2);
   check(transient.peak < 0.95 && transient.rms > 0.01, 'transient output clipped or silent');
+  check((await render('v12', {synthOnly:true})).rms > 0.02, 'V12 synthesis fallback');
   lines.push('PASS: all four real Web Audio renders, throttle/helmet dynamics, rival doppler/pan, turbo/ERS gating, shifts, limiter, surfaces, mute and pause.');
 
   // Run the actual standalone menu code, stubbing only WebGL and rig hardware.
@@ -99,6 +168,10 @@
     let win = await load({tc:false}), select = win.document.getElementById('engineEra');
     check(select.value === 'v6' && select.options.length === 4, 'old settings need modern V6 default');
     check(select.labels[0].textContent.includes('Engine sound'), 'selector needs a visible accessible label');
+    const credits = win.document.querySelector('a[href="audio/credits.html"]');
+    check(credits && credits.textContent.includes('Pe'), 'recording attribution link missing');
+    const creditPage = await (await fetch(credits.href)).text();
+    check(creditPage.includes('gpY0oKp3YC4') && creditPage.includes('creative_commons') && creditPage.includes('Edits:'), 'shipped attribution must identify source, license and edits');
     for (const era of ENGINE_ERAS) {
       select.value = era.id; select.dispatchEvent(new Event('change'));
       check(JSON.parse(localStorage.getItem(key)).engineEra === era.id, 'era not persisted');

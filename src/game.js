@@ -5,6 +5,7 @@
 const G = 9.81, RHO = 1.225, TAU = Math.PI * 2;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp = (a, b, t) => a + (b - a) * t;
+const ENGINE_URL = typeof document !== 'undefined' && document.currentScript ? document.currentScript.src : '';
 
 // ---------------- Tracks: three fictional, three real layouts ----------------
 // Control points of a closed centripetal Catmull-Rom, clockwise, in metres. Every layout shares the same start straight
@@ -753,12 +754,12 @@ function ribbon(tr, inner, outer, y, uvLen, include, yTop) {
   return g;
 }
 
-// shortcut: these are synthesized era impressions; use licensed multi-RPM recordings for car-specific fidelity.
+// shortcut: only the V12 upper revs use recordings; other ranges/eras need licensed multi-RPM sources.
 const ENGINE_ERAS = [
   { id: 'v6', label: 'V6 turbo hybrid · 2014–present', note: 'Deep exhaust, turbo whistle and electric whine.', cylinders: 6, idle: 3800, redline: 12500, cutoff: 4200, bank: 0.38, intake: 0.18, drive: 2.1, turbo: true, harmonics: [0, 1, 0.62, 0.32, 0.21, 0.12, 0.08, 0.035, 0.025] },
   { id: 'v8', label: 'V8 · 2006–2013', note: 'Hard-edged rasp rising to an 18,000 rpm scream.', cylinders: 8, idle: 4000, redline: 18000, cutoff: 7200, bank: 0.28, intake: 0.26, drive: 2.4, turbo: false, harmonics: [0, 1, 0.5, 0.36, 0.24, 0.18, 0.12, 0.09, 0.05, 0.03] },
   { id: 'v10', label: 'V10 · late 1990s–2005', note: 'Bright, piercing induction howl up to 19,000 rpm.', cylinders: 10, idle: 4000, redline: 19000, cutoff: 9000, bank: 0.18, intake: 0.22, drive: 1.8, turbo: false, harmonics: [0, 1, 0.78, 0.31, 0.26, 0.12, 0.11, 0.045, 0.03] },
-  { id: 'v12', label: 'V12 · early 1990s', note: 'Full, smooth twelve-cylinder howl up to 15,500 rpm.', cylinders: 12, idle: 3500, redline: 15500, cutoff: 7800, bank: 0.32, intake: 0.24, drive: 1.6, turbo: false, harmonics: [0, 1, 0.3, 0.44, 0.16, 0.11, 0.06, 0.04, 0.02] },
+  { id: 'v12', label: 'V12 · early 1990s', note: 'Ferrari F93A recorded acceleration; synthesized low revs and coasting.', cylinders: 12, idle: 3500, redline: 15500, cutoff: 7800, bank: 0.32, intake: 0.24, drive: 1.6, turbo: false, harmonics: [0, 1, 0.3, 0.44, 0.16, 0.11, 0.06, 0.04, 0.02] },
 ];
 
 class Audio {
@@ -786,7 +787,8 @@ class Audio {
       const o = ac.createOscillator(), gg = ac.createGain(); gg.gain.value = g; o.setPeriodicWave(bankWave);
       o.connect(gg); gg.connect(shaper); o.start(); return [o, mul, gg];
     });
-    shaper.connect(this.lp); this.lp.connect(this.eg); this.eg.connect(this.master);
+    this.synthG = ac.createGain();
+    shaper.connect(this.synthG); this.synthG.connect(this.lp); this.lp.connect(this.eg); this.eg.connect(this.master);
     this.intakeF = ac.createBiquadFilter(); this.intakeF.type = 'bandpass'; this.intakeF.Q.value = 0.65;
     this.intakeG = ac.createGain(); this.intakeG.gain.value = 0;
     noiseSrc().connect(this.intakeF); this.intakeF.connect(this.intakeG); this.intakeG.connect(shaper);
@@ -808,6 +810,25 @@ class Audio {
     if (this.oppPan) { this.oppG.connect(this.oppPan); this.oppPan.connect(this.master); } else this.oppG.connect(this.master);
     this.lastGear = 1; this.blipT = 0; this.active = false;
   }
+  loadV12() {
+    if (this.v12Loading) return this.v12Loading;
+    const ac = this.ac;
+    this.v12Loading = Promise.all(['mid', 'high'].map(async band => {
+      const response = await fetch(new URL('audio/v12-' + band + '.wav?v=f93a-1', ENGINE_URL || document.baseURI));
+      if (!response.ok) throw Error('V12 recording: HTTP ' + response.status);
+      return ac.decodeAudioData(await response.arrayBuffer());
+    })).then(buffers => {
+      if (ac.state === 'closed') return false;
+      this.v12Loops = buffers.map((buffer, i) => {
+        const source = ac.createBufferSource(), gain = ac.createGain();
+        source.buffer = buffer; source.loop = true; gain.gain.value = 0;
+        source.connect(gain); gain.connect(this.lp); source.start();
+        return { source, gain, rpm: i ? 14000 : 11000 };
+      });
+      return true;
+    }).catch(error => { console.warn('V12 recording unavailable; using synthesis.', error); return false; });
+    return this.v12Loading;
+  }
   resume() { if (!this.ac) this.init(); if (this.ac && this.ac.state !== 'running') this.ac.resume(); }
   update(sim, on, near, inside) { // inside: heard from in the helmet (cockpit view). near: the closest other car { rpm, dist, closing (m/s towards the listener), pan }
     if (!this.ac) return;
@@ -820,6 +841,7 @@ class Audio {
       this.oscs[1][2].gain.value = era.bank; this.era = era;
     }
     if (!on) { set(this.master.gain, 0, 0.1); this.active = false; return; }
+    if (era.id === 'v12') this.loadV12();
     if (!this.active) {
       this.lastGear = sim.gear; this.blipT = 0; this.active = true;
       this.pop.gain.cancelScheduledValues(t); this.pop.gain.setValueAtTime(0, t);
@@ -837,8 +859,18 @@ class Audio {
     // Map the same drivetrain rev fraction onto each era's audible rev range; handling stays identical.
     const soundRpm = rpm => era.idle + clamp((rpm - CAR.idle) / (CAR.limiter - CAR.idle), 0, 1.08) * (era.redline - era.idle);
     const blip = t < this.blipT, thr = Math.max(sim.thr, blip ? 0.8 : 0), rpm = soundRpm(sim.rpm), f = rpm / 60 * era.cylinders / 2 * (blip ? 1.07 : 1);
+    // The pass-by supplied loaded upper-rev loops; idle/coasting retain synthesis.
+    const recorded = this.v12Loops && era.id === 'v12' ? clamp((rpm - 8500) / 2000, 0, 1) * thr : 0;
+    set(this.synthG.gain, 1 - recorded * 0.9, 0.06);
+    if (this.v12Loops) {
+      const blend = clamp((rpm - 11000) / 3000, 0, 1);
+      this.v12Loops.forEach((loop, i) => {
+        set(loop.source.playbackRate, clamp(rpm / loop.rpm * (blip ? 1.07 : 1), 0.7, 1.3), 0.015);
+        set(loop.gain.gain, 2.8 * recorded * Math.sqrt(i ? blend : 1 - blend), 0.06);
+      });
+    }
     for (const [o, mul] of this.oscs) set(o.frequency, f * mul, 0.015);
-    set(this.lp.frequency, (900 + thr * era.cutoff + rpm * 0.1) * (inside ? 0.7 : 1), 0.03);
+    set(this.lp.frequency, (900 + thr * era.cutoff + rpm * 0.1) * (inside ? 0.7 - 0.3 * recorded : 1), 0.03);
     set(this.intakeF.frequency, 650 + f * 1.6, 0.04); set(this.intakeG.gain, era.intake * thr * thr, 0.025);
     const cut = sim.rpm >= CAR.limiter && Math.floor(t * 38) % 2 === 0;
     set(this.eg.gain, (sim.shiftT > 0 && !blip ? 0.045 : 0.14 + 0.24 * thr) * (cut ? 0.25 : 1), 0.008);

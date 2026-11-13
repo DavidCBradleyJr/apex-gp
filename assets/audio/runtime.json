@@ -1,0 +1,35 @@
+{
+  "source": "https://www.youtube.com/watch?v=gpY0oKp3YC4",
+  "creator": "Pe",
+  "license": "Creative Commons Attribution (YouTube)",
+  "licenseUrl": "https://www.youtube.com/t/creative_commons",
+  "sourceAudioSha256": "69278caaccfa90d82e9eaa3318d3f27ada690e969498d3a8145d5eb0edd2ce40",
+  "changes": "Mono 48 kHz; 240 Hz high-pass/8500 Hz low-pass; resampled to stabilize rising bank pitch; 128-cycle loops with 16-cycle seam crossfades; DC removed; peak normalized to 0.8; PCM16.",
+  "limit": "Apparent RPM inferred from bank harmonics includes Doppler. No tachometer calibration, isolated intake/exhaust, idle or off-throttle recording. Game uses synthesis below the sampled range and when coasting.",
+  "loops": [
+    {
+      "file": "src/audio/v12-mid.wav",
+      "referenceRpm": 11000,
+      "sourceStartSeconds": 2.65,
+      "sourceEndSeconds": 2.95,
+      "durationSeconds": 0.23272916666666665,
+      "bankHz": 549.9955241249664,
+      "rms": 0.24516284042506253,
+      "seamStep": 0.0599365234375,
+      "differenceRms": 0.05351666940243895,
+      "sha256": "f70dbdcbd5f0424974ccc3631cbab72ef50a28bd6428e05ca37e2b694d97f1c4"
+    },
+    {
+      "file": "src/audio/v12-high.wav",
+      "referenceRpm": 14000,
+      "sourceStartSeconds": 3.75,
+      "sourceEndSeconds": 4.01,
+      "durationSeconds": 0.18285416666666668,
+      "bankHz": 700.0113934146063,
+      "rms": 0.2469114983904617,
+      "seamStep": 0.00506591796875,
+      "differenceRms": 0.04051117841410939,
+      "sha256": "f03b57a6fcdcbccbd9769e9a1d6a4953043fe4b8a82c620febea14a303814ceb"
+    }
+  ]
+}
