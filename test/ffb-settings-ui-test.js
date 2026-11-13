@@ -53,12 +53,24 @@ async (page) => {
     check(await test.evaluate(()=>!controls.ffb),'reload armed force without user input');
     check(await limit.inputValue()==='60'&&await damping.inputValue()==='15'&&await friction.inputValue()==='5'&&await smoothing.inputValue()==='5','reload lost advanced tuning');
     check(await test.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'settings overflow narrow screen');
+    await test.getByRole('button',{name:'Wheel input: ON',exact:true}).click();
+    await test.getByRole('button',{name:'Save rig settings',exact:true}).click();
+    await test.getByText('Rig settings saved in this browser.',{exact:true}).waitFor();
+    await test.reload({waitUntil:'domcontentloaded'});
+    await test.getByRole('button',{name:'Wheel input: OFF',exact:true}).waitFor();
+    await test.getByText('Saved rig settings restored.',{exact:true}).waitFor();
+    check(await test.evaluate(()=>!controls.enabled&&!controls.ffb),'input toggle must persist without arming torque');
     await test.getByRole('button',{name:'Clear wheel calibration',exact:true}).click();
     check(await test.evaluate(()=>controls.profile.feedback.outputLimit===.6&&!controls.profile.steer),'clear calibration lost tuning');
     legacy=true;await test.reload({waitUntil:'domcontentloaded'});await test.waitForFunction(()=>controls.bridge);
     await test.getByText('Restart the local bridge to use adjustable output, damping and friction.',{exact:true}).waitFor();
     check(await damping.isDisabled()&&await friction.isDisabled(),'legacy bridge must not advertise conditions');
     check(await test.evaluate(()=>controls.feedbackSettings().outputLimit===.2),'legacy bridge must retain old limit');
+    await test.evaluate(()=>{Storage.prototype.setItem=()=>{throw new DOMException('Storage full','QuotaExceededError');};});
+    await test.getByRole('button',{name:'Save rig settings',exact:true}).click();
+    await test.getByText('Could not save rig settings. Browser storage may be blocked or full; settings work only for this session.',{exact:true}).waitFor();
+    await test.evaluate(()=>{controls.error='Unrelated bridge status';});
+    check(await test.getByText('Could not save rig settings. Browser storage may be blocked or full; settings work only for this session.',{exact:true}).isVisible(),'storage failure was hidden by hardware status');
     return 'PASS: unchanged defaults, output/gain/damping/friction/smoothing controls, clipping, meter, disarm, wizard/clear/reload preservation, legacy bridge and narrow layout; no WebGL or physical HID';
   }finally{await context.close();}
 }

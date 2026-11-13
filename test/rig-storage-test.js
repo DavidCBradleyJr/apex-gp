@@ -1,0 +1,21 @@
+// Run: node test/rig-storage-test.js. Fake storage only; no hardware access.
+const assert=require('assert');
+const {RigControls}=require('../src/rig.js');
+let saved=null;
+Object.defineProperty(global,'localStorage',{configurable:true,value:{getItem:()=>saved,setItem:(key,value)=>{assert.equal(key,'apexgp.rig.v1');saved=value;}}});
+const controls=new RigControls();
+controls.profile={steer:{device:'r3',axis:0,left:-1,center:0,right:1},up:{device:'r3',button:13}};
+Object.assign(controls,{enabled:false,strength:.75,roadFeel:.85,outputLimit:.4,gain:1.2,damping:.15,friction:.05,smoothing:8,invert:true,ffb:true});
+assert(controls.save());assert(controls.settingsStatus.includes('saved'));
+const restored=new RigControls();
+for(const key of ['enabled','strength','roadFeel','outputLimit','gain','damping','friction','smoothing','invert'])assert.equal(restored[key],controls[key],key+' must be restored');
+assert.deepEqual(restored.profile.steer,controls.profile.steer);assert.deepEqual(restored.profile.up,controls.profile.up);
+assert(!restored.ffb&&!restored.hid.ready,'saved settings must never arm or connect hardware');
+assert(restored.settingsStatus.includes('restored'));
+saved=JSON.stringify({steer:controls.profile.steer});
+const legacy=new RigControls();assert(legacy.enabled);assert.equal(legacy.strength,.6);assert(!legacy.ffb);
+saved='{broken';const corrupt=new RigControls();assert(corrupt.settingsStatus.includes('could not be read'));assert(!corrupt.ffb);
+Object.defineProperty(global,'localStorage',{configurable:true,value:{getItem:()=>{throw Error('blocked');},setItem:()=>{throw Error('full');}}});
+const blocked=new RigControls();assert(blocked.settingsStatus.includes('could not be read'));assert(!blocked.save());assert(blocked.settingsStatus.includes('Could not save'));
+delete global.localStorage;
+console.log('Rig storage: calibration, all tuning, input toggle, legacy profiles, corrupt/blocked storage and explicit FFB arming: PASS');

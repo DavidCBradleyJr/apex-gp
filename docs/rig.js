@@ -139,7 +139,12 @@ class RigControls {
     this.bridge = false; this.updated = 0; this.feedbackAt = 0; this.prev = {}; this.force = 0; this.active = false; this.error = '';
     this.suspended = false;
     this.hid = new MozaHidFfb(error => { this.error = error; this.stop(); });
-    try { const saved = JSON.parse(localStorage.getItem('apexgp.rig.v1')); if (saved && typeof saved === 'object' && !Array.isArray(saved)) this.profile = saved; } catch (_) { /* first calibration */ }
+    this.settingsStatus='Rig settings save automatically in this browser.';
+    try {
+      const saved=JSON.parse(localStorage.getItem('apexgp.rig.v1'));
+      if (saved && typeof saved==='object' && !Array.isArray(saved)) { this.profile=saved; this.settingsStatus='Saved rig settings restored.'; }
+    } catch (_) { this.settingsStatus='Saved rig settings could not be read. Changes may work only for this session.'; }
+    if (typeof this.profile.enabled==='boolean') this.enabled=this.profile.enabled;
     const tuning = this.profile.feedback || {};
     if (Number.isFinite(tuning.strength)) this.strength = clamp(tuning.strength, 0, 1);
     if (Number.isFinite(tuning.roadFeel)) this.roadFeel = clamp(tuning.roadFeel, 0, 1);
@@ -224,14 +229,21 @@ class RigControls {
   }
   stop() { this.force = 0; this.clipped=false; this.active = false; this.ffb = false; this.hid.stop(); }
   save() {
-    try { localStorage.setItem('apexgp.rig.v1', JSON.stringify(this.profile)); return true; }
-    catch (_) { this.error = 'Calibration works this session, but browser storage is unavailable.'; return false; }
+    this.profile.enabled=this.enabled;
+    this.profile.feedback=Object.fromEntries(['strength','roadFeel','invert','outputLimit','gain','damping','friction','smoothing'].map(key=>[key,this[key]]));
+    try {
+      localStorage.setItem('apexgp.rig.v1',JSON.stringify(this.profile));
+      this.settingsStatus='Rig settings saved in this browser.'; return true;
+    } catch (_) { this.settingsStatus='Could not save rig settings. Browser storage may be blocked or full; settings work only for this session.'; return false; }
   }
   mount(container) {
     const make = (tag, text, parent = container) => { const el = document.createElement(tag); if (text) el.textContent = text; parent.append(el); return el; };
     const status = make('div'); status.className = 'note'; status.setAttribute('role', 'status');
-    const enabled = make('button', 'Wheel input: ON'); enabled.type = 'button'; enabled.className = 'opt';
-    enabled.onclick = () => { this.enabled = !this.enabled; this.stop(); enabled.textContent = 'Wheel input: ' + (this.enabled ? 'ON' : 'OFF'); };
+    const enabled = make('button', 'Wheel input: '+(this.enabled?'ON':'OFF')); enabled.type = 'button'; enabled.className = 'opt';
+    enabled.onclick = () => { this.enabled = !this.enabled; this.stop(); this.save(); enabled.textContent = 'Wheel input: ' + (this.enabled ? 'ON' : 'OFF'); };
+    const saveRig=make('button','Save rig settings'); saveRig.type='button'; saveRig.className='opt'; saveRig.onclick=()=>{this.save();refresh();};
+    const settingsStatus=make('p',this.settingsStatus); settingsStatus.setAttribute('role','status');
+    make('p','Calibration and tuning are kept across browser restarts on this site in this browser profile. Private browsing, clearing site data or a different site address can lose or separate saved settings. Connect FFB and enable it each session.');
     const preview = (parent) => {
       const panel = make('div', '', parent); panel.className = 'rig-preview'; panel.setAttribute('aria-label', 'Live rig inputs');
       const wheelBox = make('div', '', panel); wheelBox.className = 'rig-wheel-box';
@@ -305,7 +317,7 @@ class RigControls {
       if (!wizard.confirm(this.allDevices())) return;
       if (finished) {
         this.profile = { ...wizard.draft, feedback: this.profile.feedback }; const saved = this.save(); signature = ''; endWizard();
-        savedNote.textContent = saved ? 'Rig setup saved. Your inputs are ready.' : this.error;
+        savedNote.textContent = saved ? 'Rig setup saved. Your inputs are ready.' : this.settingsStatus;
       }
       refresh(); if (!finished) title.focus();
     };
@@ -347,9 +359,7 @@ class RigControls {
     make('p', 'Direct browser FFB: Moza R3 on desktop Chrome/Edge. Choose the wheel in the browser prompt, then explicitly enable Steering FFB. Other wheelbases can use the local bridge.');
     const ffb = make('button', 'Steering FFB: OFF'); ffb.type = 'button'; ffb.className = 'opt';
     ffb.onclick = () => { if(this.ffb)this.stop(); else this.ffb=true; ffb.textContent = 'Steering FFB: ' + (this.ffb ? 'ON' : 'OFF'); };
-    const saveFeedback = () => {
-      this.profile.feedback=Object.fromEntries(['strength','roadFeel','invert','outputLimit','gain','damping','friction','smoothing'].map(key=>[key,this[key]])); this.save();
-    };
+    const saveFeedback = () => this.save();
     const slider=(key,label,max,scale,unit,help)=>{
       const box=make('div'), labelEl=make('label',label,box), input=make('input','',labelEl), value=make('output','',box);
       input.type='range'; input.min='0'; input.max=String(max); input.value=String(Math.round(this[key]*scale));
@@ -386,6 +396,8 @@ class RigControls {
     reset.onclick = () => { this.stop(); this.profile = { feedback: this.profile.feedback }; this.save(); signature = ''; refresh(); };
     let signature = '', lastStatus = '', wizardIndex = -1;
     const refresh = () => {
+      if(settingsStatus.textContent!==this.settingsStatus)settingsStatus.textContent=this.settingsStatus;
+      saveRig.disabled=!!this.wizard;
       const devices = this.allDevices(), sig = JSON.stringify(devices.map(d => [d.key, d.axes.length, d.buttons.length]));
       if (sig !== signature) {
         signature = sig;
