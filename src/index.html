@@ -253,9 +253,9 @@
 <script src="vendor/postfx.js"></script>
 <script src="vendor/car.js"></script>
 <script src="vendor/f1-cars.js"></script>
-<!-- shortcut: bump this version when the page needs a new engine API. -->
-<script src="game.js?v=team-models-1"></script>
-<script src="webhid-ffb.js"></script>
+<!-- bump this version on every script tag below whenever game.js, rig.js, webhid-ffb.js or overlay.js change: browsers keep the old files otherwise. -->
+<script src="game.js?v=ffb-memory-1"></script>
+<script src="webhid-ffb.js?v=ffb-memory-1"></script>
 <dialog class="rig-ask" id="rigAsk" aria-labelledby="rigAskTitle">
   <h2 id="rigAskTitle">Using a sim rig?</h2>
   <p>Set up a steering wheel and pedals, with optional force feedback. Takes about a minute.</p>
@@ -267,8 +267,8 @@
   <div class="rig-dlg-head"><h2 id="rigDlgTitle">SIM RIG</h2><button type="button" class="rig-x" id="rigClose" aria-label="Close sim rig setup">&#x2715;</button></div>
   <div id="rigControls" class="rig-body"></div>
 </dialog>
-<script src="rig.js"></script>
-<script src="overlay.js"></script>
+<script src="rig.js?v=ffb-memory-1"></script>
+<script src="overlay.js?v=ffb-memory-1"></script>
 <script>
 // Standalone page for the engine (GitHub Pages build). The Claude Design canvas in design/project is the richer UI:
 // it adds wing and brake-bias sliders and the lap telemetry screen.
