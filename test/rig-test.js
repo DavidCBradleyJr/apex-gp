@@ -33,7 +33,8 @@ controls.feedback({ aligningTorque: 1000000 }, true); assert.equal(controls.forc
 controls.invert = true; controls.feedback({ aligningTorque: 100000 }, true); assert.equal(controls.force, -0.25);
 controls.feedback({ aligningTorque: 100000 }, false); assert.equal(controls.force, 0);
 controls.ffb = true; controls.updated = performance.now() - 151; assert.equal(controls.read([]), null); assert(!controls.ffb);
-controls.ffb = true; controls.block(); assert(!controls.ffb); assert.equal(controls.force, 0);
+controls.ffb = true; controls.block(); assert(controls.ffb, 'leaving the page keeps FFB armed'); assert.equal(controls.force, 0); assert(!controls.active);
+controls.feedback({ aligningTorque: 100000 }, true); assert.equal(controls.force, 0, 'no torque while the page is in the background'); controls.suspended = false;
 // Linear wheel steering must retain full lock at high speed; pad steering remains speed-sensitive.
 global.THREE = require('../vendor/three.min.js');
 const { Sim, buildTrack, CAR } = require('../src/game.js');

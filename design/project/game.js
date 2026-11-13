@@ -1799,7 +1799,7 @@ function create(canvas, opts = {}) {
   }
 
   function handleEdge(e) {
-    if (e === 'pause') { if (opts.controls) opts.controls.stop(); if (state.phase === 'run' || state.phase === 'lights') { state.phase = 'paused'; } else if (state.phase === 'paused') { state.phase = 'run'; state.tel = false; } else state.tel = false; return; }
+    if (e === 'pause') { if (opts.controls) opts.controls.silence(); if (state.phase === 'run' || state.phase === 'lights') { state.phase = 'paused'; } else if (state.phase === 'paused') { state.phase = 'run'; state.tel = false; } else state.tel = false; return; }
     if (e === 'tel') { showTel(!state.tel); return; }
     if (e === 'ghost') { state.ghost = !state.ghost; return; }
     if (e === 'fx') { gfxAuto = false; bench = null; setQuality(state.quality === 0 ? 2 : state.quality - 1); sim.flash('GRAPHICS ' + ['LOW', 'MEDIUM', 'HIGH'][state.quality], 1.5); return; }
@@ -1866,7 +1866,7 @@ function create(canvas, opts = {}) {
       acc += dtF; sim.impact = 0;
       while (acc >= DT) { race.step(DT, inp); acc -= DT; }
     }
-    if (opts.controls && (state.phase === 'paused' || state.phase === 'finished')) opts.controls.stop();
+    if (opts.controls && (state.phase === 'paused' || state.phase === 'finished')) opts.controls.silence();
     if (opts.controls) opts.controls.feedback(sim, !!wheelIn && state.phase === 'run');
     lightMats.forEach((m, i) => m.emissiveIntensity = i < state.lights ? 3.5 : 0);
 
@@ -2066,8 +2066,8 @@ function create(canvas, opts = {}) {
     // traces for the telemetry screen: the lap just finished, and the best lap as it stood before it
     lapData() { return { ds: REC_DS, L: track.L, sectors: track.sectors, last: sim.lastRec, ref: sim.refRec }; },
     clearBest() { sim.bestRec = savedRec = null; sim.bestLap = null; sim.bestSectors = [null, null, null]; try { localStorage.removeItem(STORE); } catch (e) { /* nothing stored */ } },
-    pause() { if (opts.controls) opts.controls.stop(); keys.clear(); if (state.phase === 'run' || state.phase === 'lights') state.phase = 'paused'; },
-    menu() { if (opts.controls) opts.controls.stop(); state.phase = 'menu'; state.tel = false; endRace(); sim.placeAt(track.L - 16, -2.5); },
+    pause() { if (opts.controls) opts.controls.silence(); keys.clear(); if (state.phase === 'run' || state.phase === 'lights') state.phase = 'paused'; },
+    menu() { if (opts.controls) opts.controls.silence(); state.phase = 'menu'; state.tel = false; endRace(); sim.placeAt(track.L - 16, -2.5); },
     camera(i) { state.camMode = i; },
     team(id) { paintCar(id); }, // the player's car; the AI field takes the other teams at the next race
     // 'auto' or 0 / 1 / 2 (low / medium / high)
@@ -2076,7 +2076,7 @@ function create(canvas, opts = {}) {
     overview(on, shift) { state.map = !!on; state.mapShift = shift || 0; },
     mute(m) { audio.muted = m; },
     destroy() { // frees the GPU side too: the UI destroys and re-creates the game to change circuit
-      cancelAnimationFrame(raf); if (opts.controls) opts.controls.stop();
+      cancelAnimationFrame(raf); if (opts.controls) opts.controls.silence();
       scene.traverse(o => { if (o.geometry) o.geometry.dispose(); for (const m of [].concat(o.material || [])) { for (const k in m) if (m[k] && m[k].isTexture) m[k].dispose(); m.dispose(); } });
       mirrorRT.dispose(); dashTex.dispose();
       renderer.dispose(); if (audio.ac) audio.ac.close(); },

@@ -20,6 +20,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     await cdp('Page.navigate', { url: 'http://127.0.0.1:8771/index.html' });
     for (let i = 0; i < 60 && !(await ev(`!!document.querySelector('#dispOpts button')`)); i++) await sleep(500);
     await ev(`localStorage.clear()`);
+    await ev(`localStorage.setItem('apexgp.rig.asked', '1'); document.getElementById('rigAsk').close()`); // first-visit rig prompt would cover the menu
     // menu -> editor, no session started
     await ev(`[...document.querySelectorAll('#dispOpts button')].find(b => b.textContent.startsWith('Edit HUD layout')).click()`);
     assert.strictEqual(await ev(`document.getElementById('menu').hidden`), true, 'menu hidden');

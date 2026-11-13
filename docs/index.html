@@ -65,6 +65,29 @@
   .rig-wizard-actions .rig-primary { flex-basis: 100%; }
   .rig-wizard button:disabled { cursor: default; opacity: 0.45; }
   @media (max-width: 420px) { .rig-wizard { padding: 18px; } .rig-wizard .rig-preview { gap: 8px; padding: 16px 8px 8px; } }
+  #rigMenuBtn { margin-top: 14px; width: 100%; color: var(--text); }
+  #rigMenuBtn b { font: 700 13px 'Barlow Condensed', sans-serif; letter-spacing: 0.08em; color: var(--accent); }
+  .rig-dlg { box-sizing: border-box; width: min(860px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid #48515e; border-radius: 16px; background: #11161e; color: var(--text); overflow: hidden; }
+  .rig-dlg[open] { display: flex; flex-direction: column; }
+  .rig-dlg::backdrop { background: rgba(0,0,0,0.78); }
+  .rig-dlg h2 { font: 700 30px 'Barlow Condensed', sans-serif; letter-spacing: 0.04em; margin: 0; }
+  .rig-dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  .rig-x { width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,0.03); color: var(--text); font-size: 20px; }
+  #rigControls.rig-body { overflow-y: auto; padding: 16px 20px; margin: 0; }
+  .rig-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,0.03); }
+  .rig-card h3 { margin: 0; font: 700 20px 'Barlow Condensed', sans-serif; letter-spacing: 0.1em; color: var(--accent); }
+  .rig-card .rig-sub { color: var(--dim); }
+  #rigControls p.rig-warn { padding: 10px 12px; border-left: 3px solid var(--accent); background: rgba(255,106,26,0.1); color: var(--text); }
+  .rig-foot { position: sticky; bottom: -16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0 -20px -16px; padding: 12px 20px; border-top: 1px solid var(--line); background: #11161e; }
+  .rig-foot p { flex: 1 1 220px; }
+  .rig-foot-btns { display: flex; gap: 8px; }
+  .rig-ask { box-sizing: border-box; width: min(420px, calc(100vw - 32px)); padding: 22px; border: 1px solid #48515e; border-radius: 16px; background: #11161e; color: var(--text); }
+  .rig-ask::backdrop { background: rgba(0,0,0,0.78); }
+  .rig-ask h2 { font: 700 30px 'Barlow Condensed', sans-serif; margin: 0 0 8px; }
+  .rig-ask p { font-size: 14px; line-height: 1.5; color: #c3c9d1; margin: 0 0 12px; }
+  .rig-ask .rig-warn { font-size: 12px; padding: 10px 12px; border-left: 3px solid var(--accent); background: rgba(255,106,26,0.1); color: var(--text); }
+  .rig-ask .rig-primary { width: 100%; margin-bottom: 8px; } .rig-ask .opt { width: 100%; justify-content: center; }
+  @media (max-width: 520px) { .rig-card { padding: 12px; } #rigControls.rig-body, .rig-dlg-head { padding-left: 12px; padding-right: 12px; } .rig-foot { margin: 0 -12px -16px; padding: 12px; } .rig-preview { gap: 6px; } }
   #rigControls > label progress { width: 100%; height: 12px; accent-color: var(--accent); }
   .rig-captures { display: flex; flex-wrap: wrap; gap: 8px; }
   #hud > div { position: fixed; }
@@ -172,7 +195,7 @@
         <span>Pause · mute · graphics</span><span>Esc · M · B</span>
         <span>Fullscreen</span><span>F</span>
       </div>
-      <details style="margin-top: 14px"><summary style="cursor: pointer; padding: 12px 0">SIM RIG · WHEELS, PEDALS &amp; FFB</summary><div id="rigControls"></div></details>
+      <button type="button" class="opt" id="rigMenuBtn"><span>SIM RIG · WHEELS, PEDALS &amp; FFB</span><b id="rigState">NOT SET UP</b></button>
       <div class="note" style="margin-top: 8px">Gamepad: left stick steer, RT/LT throttle/brake, RB/LB gears, Y view, X DRS, B overtake.</div>
     </div>
   </div>
@@ -217,7 +240,6 @@
       <h2 id="ovTitle">PAUSED</h2>
       <div id="result" class="num" hidden></div>
       <button class="main" id="ovResume" type="button">RESUME</button>
-      <button id="ovRigResume" type="button" hidden>RESUME WITH WHEEL FFB</button>
       <button id="ovRestart" type="button">RESTART</button>
       <button id="ovEdit" type="button">EDIT HUD LAYOUT</button>
       <button id="ovMenu" type="button">BACK TO MENU</button>
@@ -234,6 +256,17 @@
 <!-- shortcut: bump this version when the page needs a new engine API. -->
 <script src="game.js?v=team-models-1"></script>
 <script src="webhid-ffb.js"></script>
+<dialog class="rig-ask" id="rigAsk" aria-labelledby="rigAskTitle">
+  <h2 id="rigAskTitle">Using a sim rig?</h2>
+  <p>Set up a steering wheel and pedals, with optional force feedback. Takes about a minute.</p>
+  <p class="rig-warn">Wheel and force-feedback support has only been tested with a Moza R3 on Linux. Other wheels and systems may behave differently. Start with low FFB strength.</p>
+  <button type="button" class="opt rig-primary" id="rigAskYes">YES, SET UP</button>
+  <button type="button" class="opt" id="rigAskNo">NO, KEYBOARD OR PAD</button>
+</dialog>
+<dialog class="rig-dlg" id="rigDlg" aria-labelledby="rigDlgTitle">
+  <div class="rig-dlg-head"><h2 id="rigDlgTitle">SIM RIG</h2><button type="button" class="rig-x" id="rigClose" aria-label="Close sim rig setup">&#x2715;</button></div>
+  <div id="rigControls" class="rig-body"></div>
+</dialog>
 <script src="rig.js"></script>
 <script src="overlay.js"></script>
 <script>
@@ -252,7 +285,17 @@
   if (!setup.layout || typeof setup.layout !== 'object' || Array.isArray(setup.layout)) setup.layout = {};
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(setup)); } catch (e) { /* storage blocked */ } };
   const CAMS = ['CHASE', 'T-CAM', 'COCKPIT'];
-  const controls = new ApexRig.RigControls(); controls.mount($('rigControls'));
+  const controls = new ApexRig.RigControls(); 
+  const rigDlg = $('rigDlg'), rigAsk = $('rigAsk'), ASKED = 'apexgp.rig.asked';
+  controls.mount($('rigControls'), { onDone: () => rigDlg.close() });
+  for (const d of [rigDlg, rigAsk]) for (const ev of ['keydown', 'keyup']) d.addEventListener(ev, e => e.stopPropagation()); // keys must not drive the game behind
+  const openRig = () => { if (rigAsk.open) rigAsk.close(); rigDlg.showModal(); };
+  $('rigMenuBtn').onclick = openRig; $('rigClose').onclick = () => rigDlg.close();
+  const rigReady = () => ApexRig.valid(controls.profile.steer, true);
+  setInterval(() => { const t = rigReady() ? (controls.ffb || controls.hid.ready || controls.bridge ? 'READY · FFB' : 'READY') : 'NOT SET UP'; if ($('rigState').textContent !== t) $('rigState').textContent = t; }, 500);
+  $('rigAskYes').onclick = openRig; $('rigAskNo').onclick = () => rigAsk.close(); // Esc closes it too: same as NO
+  let asked = false; try { asked = !!localStorage.getItem(ASKED); } catch (e) { /* blocked: ask once per load */ }
+  if (!asked && !rigReady() && !matchMedia('(max-width: 760px)').matches) { rigAsk.showModal(); try { localStorage.setItem(ASKED, '1'); } catch (e) { /* blocked */ } }
   let game = null, map = null, t = null;
   for (const era of A.ENGINE_ERAS) $('engineEra').append(new Option(era.label, era.id));
   $('engineEra').onchange = () => { setup.engineEra = $('engineEra').value; save(); menu(); };
@@ -379,11 +422,12 @@
   $('clearBtn').onclick = () => { if (game) game.clearBest(); };
   function start() {
     if (!game || !t || !t.ready) return; // the car model is still loading
-    game.begin(Object.assign({}, setup, { time: setup.time === 'golden' ? 7 : 38 })); game.camera(setup.camera); canvas.focus();
+    armFfb(); game.begin(Object.assign({}, setup, { time: setup.time === 'golden' ? 7 : 38 })); game.camera(setup.camera); canvas.focus();
   }
   $('go').onclick = start;
-  $('ovResume').onclick = () => { game.resume(); canvas.focus(); };
-  $('ovRigResume').onclick = () => { controls.ffb = true; game.resume(); canvas.focus(); };
+  // a calibrated wheel with FFB connected always drives with FFB: resume and restart (both clicks) arm it
+  const armFfb = () => { const d = controls.allDevices(), w = d.find(x => controls.profile.steer && x.key === controls.profile.steer.device); if (controls.enabled && controls.ffbAvailable(w, d) && ApexRig.mappedInput(controls.profile, d)) controls.ffb = true; };
+  $('ovResume').onclick = () => { armFfb(); game.resume(); canvas.focus(); };
   $('ovMenu').onclick = () => game.menu();
   $('ovRestart').onclick = start;
   addEventListener('keydown', (e) => {
@@ -406,8 +450,6 @@
   const chip = (el, on, color) => { el.style.borderColor = on ? color : '#3a414c'; el.style.color = on ? '#0b0d10' : '#6b7380'; el.style.background = on ? color : 'transparent'; };
   const hue = (h) => 'hsl(' + ((22 + h) % 360) + ' 85% 60%)';
   function hud() {
-    const rigWheel = controls.allDevices().find(d => controls.profile.steer && d.key === controls.profile.steer.device);
-    $('ovRigResume').hidden = !(t.phase === 'paused' && controls.enabled && controls.ffbAvailable(rigWheel) && ApexRig.mappedInput(controls.profile, controls.allDevices()));
     const p = t.phase, driving = p !== 'menu';
     const hudWas = $('hud').hidden; $('menu').hidden = driving || editing; $('hud').hidden = !(driving || editing); if (driving && hudWas) applyLayout();
     $('hud').className = 'ov-' + setup.overlay + (editing ? ' editing' : ''); // keep .editing across the 15 Hz rewrite

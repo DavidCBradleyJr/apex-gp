@@ -153,7 +153,7 @@ class RigControls {
       if (Number.isFinite(tuning[key])) this[key]=clamp(tuning[key],0,max);
     }
     this.invert = tuning.invert === true;
-    this.block = () => { this.suspended = true; this.stop(); };
+    this.block = () => { this.suspended = true; this.silence(); }; // no torque while the page is in the background; FFB stays armed for return
     this.focus = () => { if (!document.hidden) this.suspended = false; };
     this.visibility = () => { if (document.hidden) this.block(); else this.focus(); };
     if (typeof window !== 'undefined') {
@@ -228,7 +228,9 @@ class RigControls {
     this.force = this.active ? clamp(signal, -1, 1) * this.strength * (this.invert ? -1 : 1) : 0;
     if (!this.bridge) { if (this.active) this.hid.write(this.force,this.feedbackSettings()); else this.hid.stop(); }
   }
-  stop() { this.force = 0; this.clipped=false; this.active = false; this.ffb = false; this.hid.stop(); }
+  // silence(): no torque now, but stay armed (pause, menu, restart). stop(): also disarm (errors, setup and safety changes).
+  silence() { this.force = 0; this.clipped=false; this.active = false; this.hid.stop(); }
+  stop() { this.silence(); this.ffb = false; }
   save() {
     this.profile.enabled=this.enabled;
     this.profile.feedback=Object.fromEntries(['strength','roadFeel','engineFeel','invert','outputLimit','gain','damping','friction','smoothing'].map(key=>[key,this[key]]));
@@ -237,14 +239,16 @@ class RigControls {
       this.settingsStatus='Rig settings saved in this browser.'; return true;
     } catch (_) { this.settingsStatus='Could not save rig settings. Browser storage may be blocked or full; settings work only for this session.'; return false; }
   }
-  mount(container) {
-    const make = (tag, text, parent = container) => { const el = document.createElement(tag); if (text) el.textContent = text; parent.append(el); return el; };
+  mount(container, opts = {}) {
+    let host = container; // make() appends here; switched per section card
+    const make = (tag, text, parent = host) => { const el = document.createElement(tag); if (text) el.textContent = text; parent.append(el); return el; };
     const status = make('div'); status.className = 'note'; status.setAttribute('role', 'status');
+    const card = (title, sub) => { const c = make('section', '', container); c.className = 'rig-card'; make('h3', title, c); if (sub) make('p', sub, c).className = 'rig-sub'; host = c; return c; };
+    card('WHEEL & PEDALS', 'Steering, throttle, brake and buttons. The walkthrough finds each control for you.');
+    const startWizard = make('button', 'Start input walkthrough'); startWizard.type = 'button'; startWizard.className = 'opt rig-primary';
+    const savedNote = make('div'); savedNote.className = 'note'; savedNote.setAttribute('role', 'status');
     const enabled = make('button', 'Wheel input: '+(this.enabled?'ON':'OFF')); enabled.type = 'button'; enabled.className = 'opt';
     enabled.onclick = () => { this.enabled = !this.enabled; this.stop(); this.save(); enabled.textContent = 'Wheel input: ' + (this.enabled ? 'ON' : 'OFF'); };
-    const saveRig=make('button','Save rig settings'); saveRig.type='button'; saveRig.className='opt'; saveRig.onclick=()=>{this.save();refresh();};
-    const settingsStatus=make('p',this.settingsStatus); settingsStatus.setAttribute('role','status');
-    make('p','Calibration and tuning are kept across browser restarts on this site in this browser profile. Private browsing, clearing site data or a different site address can lose or separate saved settings. Connect FFB and enable it each session.');
     const preview = (parent) => {
       const panel = make('div', '', parent); panel.className = 'rig-preview'; panel.setAttribute('aria-label', 'Live rig inputs');
       const wheelBox = make('div', '', panel); wheelBox.className = 'rig-wheel-box';
@@ -291,11 +295,9 @@ class RigControls {
         }
       };
     };
-    const monitor = preview(container);
+    const monitor = preview(host);
     make('p', 'Pedal percentages show the reported signal: pressure on load-cell pedals, travel on position sensors.');
-    const startWizard = make('button', 'Start input walkthrough'); startWizard.type = 'button'; startWizard.className = 'opt rig-primary';
-    const savedNote = make('div'); savedNote.className = 'note'; savedNote.setAttribute('role', 'status');
-    const dialog = make('dialog'); dialog.className = 'rig-wizard'; dialog.setAttribute('aria-labelledby', 'rigWizardTitle');
+    const dialog = make('dialog', '', container); dialog.className = 'rig-wizard'; dialog.setAttribute('aria-labelledby', 'rigWizardTitle');
     const progress = make('div', '', dialog); progress.className = 'label';
     const title = make('h2', '', dialog); title.id = 'rigWizardTitle'; title.tabIndex = -1;
     const instructions = make('p', '', dialog);
@@ -350,6 +352,10 @@ class RigControls {
       select.onchange = () => { this.stop(); this.profile[key] = select.value ? JSON.parse(select.value) : null; this.save(); };
       fields.push({ select, key, type: 'button' });
     }
+    const reset = make('button', 'Clear wheel calibration'); reset.type = 'button'; reset.className = 'opt';
+    reset.onclick = () => { this.stop(); this.profile = { feedback: this.profile.feedback }; this.save(); signature = ''; refresh(); };
+    card('FORCE FEEDBACK', 'Optional. Steering torque needs a connected wheelbase.');
+    const warn = make('p', 'Wheel and force-feedback support has only been tested with a Moza R3 on Linux. Other wheels and systems may behave differently. Start with low FFB strength.'); warn.className = 'rig-warn';
     const connectHid = make('button', 'Connect browser FFB'); connectHid.type = 'button'; connectHid.className = 'opt';
     connectHid.onclick = async () => {
       this.stop();
@@ -357,7 +363,7 @@ class RigControls {
       catch (e) { this.error = e.name === 'NotFoundError' ? 'No wheel selected. You can connect it when ready.' : e.message + ' On Linux, check HID device access permissions.'; }
       refresh();
     };
-    make('p', 'Direct browser FFB: Moza R3 on desktop Chrome/Edge. Choose the wheel in the browser prompt, then explicitly enable Steering FFB. Other wheelbases can use the local bridge.');
+    make('p', 'Browser FFB works in desktop Chrome/Edge. Other wheelbases can use the local bridge. Enable Steering FFB yourself each session.');
     const ffb = make('button', 'Steering FFB: OFF'); ffb.type = 'button'; ffb.className = 'opt';
     ffb.onclick = () => { if(this.ffb)this.stop(); else this.ffb=true; ffb.textContent = 'Steering FFB: ' + (this.ffb ? 'ON' : 'OFF'); };
     const saveFeedback = () => this.save();
@@ -388,14 +394,15 @@ class RigControls {
     forceMeter.max = 100; forceMeter.value = 0; forceMeter.setAttribute('aria-label', 'FFB output request');
     const forceValue = make('output', '0.0% of base output', forceMeterLabel);
     const clipping=make('p'); clipping.setAttribute('role','status');
-    make('p','The meter shows steering torque requested, not measured torque. Damping and friction depend on wheel movement; their combined ceiling is shown separately.');
-    make('p', 'Road texture follows the front tyres: subtle asphalt grain, rhythmic kerbs and rough loose surfaces. This is procedural surface feedback, not scanned pavement.');
+    make('p','The meter shows torque requested, not measured. Road texture is procedural surface feedback from the front tyres.');
     const invertLabel = make('label', 'Reverse FFB direction'), invert = make('input', '', invertLabel); invert.type = 'checkbox'; invert.checked = this.invert;
     invert.onchange = () => { this.invert = invert.checked; this.stop(); saveFeedback(); };
-    make('p', 'Moza R3 normally uses Reverse FFB direction OFF. If you enabled it to compensate for the earlier direction bug, turn it OFF after updating and recheck at low strength.');
-    make('p', 'FFB starts off each session. Begin at low strength: the wheel should resist a turn. If it pulls into the turn, disable FFB and reverse its direction. Pause or loss of focus disarms it.');
-    const reset = make('button', 'Clear wheel calibration'); reset.type = 'button'; reset.className = 'opt';
-    reset.onclick = () => { this.stop(); this.profile = { feedback: this.profile.feedback }; this.save(); signature = ''; refresh(); };
+    make('p', 'FFB starts off each session. The wheel should resist a turn; if it pulls into the turn, reverse the direction. Pause or loss of focus disarms it. Moza R3 normally needs this OFF.');
+    host = container; const foot = make('div'); foot.className = 'rig-foot'; host = foot;
+    const settingsStatus=make('p',this.settingsStatus); settingsStatus.setAttribute('role','status'); settingsStatus.title='Settings are kept in this browser profile; private browsing or clearing site data loses them. Connect FFB and enable it each session.';
+    const footBtns = make('div', '', foot); footBtns.className = 'rig-foot-btns';
+    const saveRig=make('button','Save rig settings',footBtns); saveRig.type='button'; saveRig.className='opt'; saveRig.onclick=()=>{this.save();refresh();};
+    if (opts.onDone) { const done = make('button','Done',footBtns); done.type='button'; done.className='opt rig-primary'; done.onclick=opts.onDone; }
     let signature = '', lastStatus = '', wizardIndex = -1;
     const refresh = () => {
       if(settingsStatus.textContent!==this.settingsStatus)settingsStatus.textContent=this.settingsStatus;

@@ -41,7 +41,7 @@ async (page) => {
     await test.waitForFunction(()=>hidCalls.some(c=>c.id===10&&c.data[1]===1),null,{timeout:10000});
     check(await test.evaluate(()=>hidCalls.filter(c=>c.id===10&&c.data[1]===1).every(c=>c.data[2]===1)),'infinite effect playback');
     await test.evaluate(()=>testGame.pause());
-    await test.waitForFunction(()=>!testControls.ffb&&!testControls.hid.playing,null,{timeout:10000});
+    await test.waitForFunction(()=>testControls.ffb&&!testControls.hid.playing,null,{timeout:10000}); // pause stops torque but stays armed for resume
     check(await test.evaluate(()=>hidCalls.filter(c=>c.id===10).at(-1).data[1]===3),'pause did not stop the effect');
     stage='wizard suppresses native FFB';
     await test.evaluate(()=>testGame.menu());
