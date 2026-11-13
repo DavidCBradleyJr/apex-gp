@@ -1,7 +1,7 @@
 /* Wheel calibration and optional localhost SDL2 transport. No controller layouts are guessed. */
 (function (root) {
 'use strict';
-const { MozaHidFfb } = typeof module !== 'undefined' ? require('./webhid-ffb.js') : root.ApexHID;
+const { MozaHidFfb, MAX_FORCE } = typeof module !== 'undefined' ? require('./webhid-ffb.js') : root.ApexHID;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const axis = (binding, devices) => {
   if (!binding) return null;
@@ -20,6 +20,11 @@ function normalize(binding, value, steering = false) {
   const right = (value - binding.center) * (binding.right - binding.center) >= 0;
   const v = (value - binding.center) / (right ? binding.right - binding.center : binding.center - binding.left);
   return Math.abs(v) < 0.005 ? 0 : clamp(v, -1, 1);
+}
+function feedbackForce(sim, roadFeel = 0.6) {
+  const aligning = Number.isFinite(sim.aligningTorque) ? Math.tanh(sim.aligningTorque / 700) : 0;
+  const texture = Number.isFinite(sim.roadFeedback) ? sim.roadFeedback * clamp(Math.abs(sim.speed || 0) / 3, 0, 1) : 0;
+  return clamp(aligning + texture * roadFeel, -1, 1);
 }
 function mappedInput(profile, devices) {
   if (!profile || !valid(profile.steer, true) || !valid(profile.throttle) || !valid(profile.brake)) return null;
@@ -128,11 +133,15 @@ class RigWizard {
 
 class RigControls {
   constructor() {
-    this.devices = []; this.profile = {}; this.enabled = true; this.ffb = false; this.strength = 0.25; this.invert = false;
+    this.devices = []; this.profile = {}; this.enabled = true; this.ffb = false; this.strength = 0.6; this.roadFeel = 0.6; this.invert = false;
     this.bridge = false; this.updated = 0; this.feedbackAt = 0; this.prev = {}; this.force = 0; this.active = false; this.error = '';
     this.suspended = false;
     this.hid = new MozaHidFfb(error => { this.error = error; this.stop(); });
     try { const saved = JSON.parse(localStorage.getItem('apexgp.rig.v1')); if (saved && typeof saved === 'object' && !Array.isArray(saved)) this.profile = saved; } catch (_) { /* first calibration */ }
+    const tuning = this.profile.feedback || {};
+    if (Number.isFinite(tuning.strength)) this.strength = clamp(tuning.strength, 0, 1);
+    if (Number.isFinite(tuning.roadFeel)) this.roadFeel = clamp(tuning.roadFeel, 0, 1);
+    this.invert = tuning.invert === true;
     this.block = () => { this.suspended = true; this.stop(); };
     this.focus = () => { if (!document.hidden) this.suspended = false; };
     this.visibility = () => { if (document.hidden) this.block(); else this.focus(); };
@@ -189,11 +198,12 @@ class RigControls {
   ffbAvailable(wheel, devices = this.allDevices()) { return this.bridge ? !!wheel?.ffb : this.hid.matches(wheel, devices); }
   feedback(sim, active) {
     this.feedbackAt = performance.now();
+    this.surface = sim.surf ? [...new Set(sim.surf.slice(0, 2))].join(' / ') : '';
     const d = this.allDevices().find(d => this.profile.steer && d.key === this.profile.steer.device);
     this.active = !!(active && !this.wizard && this.enabled && this.ffb && this.ffbAvailable(d) && !this.suspended);
     this.target = d ? d.id : null;
     // Aligning torque comes from the front tyres; grip loss lightens the wheel. Never substitute rumble.
-    const force = Number.isFinite(sim.aligningTorque) ? sim.aligningTorque / 1000 : 0;
+    const force = feedbackForce(sim, this.roadFeel);
     this.force = this.active ? clamp(force, -1, 1) * this.strength * (this.invert ? -1 : 1) : 0;
     if (!this.bridge) { if (this.active) this.hid.write(this.force); else this.hid.stop(); }
   }
@@ -279,7 +289,7 @@ class RigControls {
       const wizard = this.wizard, finished = wizard.step[1] === 'review';
       if (!wizard.confirm(this.allDevices())) return;
       if (finished) {
-        this.profile = wizard.draft; const saved = this.save(); signature = ''; endWizard();
+        this.profile = { ...wizard.draft, feedback: this.profile.feedback }; const saved = this.save(); signature = ''; endWizard();
         savedNote.textContent = saved ? 'Rig setup saved. Your inputs are ready.' : this.error;
       }
       refresh(); if (!finished) title.focus();
@@ -323,14 +333,23 @@ class RigControls {
     const ffb = make('button', 'Steering FFB: OFF'); ffb.type = 'button'; ffb.className = 'opt';
     ffb.onclick = () => { this.ffb = !this.ffb; ffb.textContent = 'Steering FFB: ' + (this.ffb ? 'ON' : 'OFF'); };
     const strengthLabel = make('label', 'FFB strength (maximum 20% of base output)'), strength = make('input', '', strengthLabel);
-    strength.type = 'range'; strength.min = '0'; strength.max = '100'; strength.value = '25';
-    const strengthValue = make('output', '25%', strengthLabel);
-    strength.oninput = () => { this.strength = +strength.value / 100; strengthValue.textContent = strength.value + '%'; };
-    const invertLabel = make('label', 'Reverse FFB direction'), invert = make('input', '', invertLabel); invert.type = 'checkbox';
-    invert.onchange = () => { this.invert = invert.checked; this.stop(); };
+    const saveFeedback = () => { this.profile.feedback = { strength: this.strength, roadFeel: this.roadFeel, invert: this.invert }; this.save(); };
+    strength.type = 'range'; strength.min = '0'; strength.max = '100'; strength.value = String(Math.round(this.strength * 100));
+    const strengthValue = make('output', strength.value + '%', strengthLabel);
+    strength.oninput = () => { this.strength = +strength.value / 100; strengthValue.textContent = strength.value + '%'; saveFeedback(); };
+    const roadLabel = make('label', 'Road texture'), road = make('input', '', roadLabel);
+    road.type = 'range'; road.min = '0'; road.max = '100'; road.value = String(Math.round(this.roadFeel * 100));
+    const roadValue = make('output', road.value + '%', roadLabel);
+    road.oninput = () => { this.roadFeel = +road.value / 100; roadValue.textContent = road.value + '%'; saveFeedback(); };
+    const forceMeterLabel = make('label', 'FFB output request'), forceMeter = make('progress', '', forceMeterLabel);
+    forceMeter.max = MAX_FORCE * 100; forceMeter.value = 0; forceMeter.setAttribute('aria-label', 'FFB output request');
+    const forceValue = make('output', '0.0% of base output', forceMeterLabel);
+    make('p', 'Road texture follows the front tyres: subtle asphalt grain, rhythmic kerbs and rough loose surfaces. This is procedural surface feedback, not scanned pavement.');
+    const invertLabel = make('label', 'Reverse FFB direction'), invert = make('input', '', invertLabel); invert.type = 'checkbox'; invert.checked = this.invert;
+    invert.onchange = () => { this.invert = invert.checked; this.stop(); saveFeedback(); };
     make('p', 'FFB starts off each session. Begin at low strength: the wheel should resist a turn. If it pulls into the turn, disable FFB and reverse its direction. Pause or loss of focus disarms it.');
     const reset = make('button', 'Clear wheel calibration'); reset.type = 'button'; reset.className = 'opt';
-    reset.onclick = () => { this.stop(); this.profile = {}; this.save(); signature = ''; refresh(); };
+    reset.onclick = () => { this.stop(); this.profile = { feedback: this.profile.feedback }; this.save(); signature = ''; refresh(); };
     let signature = '', lastStatus = '', wizardIndex = -1;
     const refresh = () => {
       const devices = this.allDevices(), sig = JSON.stringify(devices.map(d => [d.key, d.axes.length, d.buttons.length]));
@@ -347,6 +366,9 @@ class RigControls {
         }
       }
       monitor(this.profile, devices);
+      const requested = Math.abs(this.force) * MAX_FORCE * 100;
+      forceMeter.value = requested;
+      forceValue.textContent = requested.toFixed(1) + '% of base output' + (this.surface ? ' · ' + this.surface : '');
       if (this.wizard) {
         const wizard = this.wizard; wizard.observe(devices);
         const [key, phase, heading, prompt] = wizard.step;
@@ -379,7 +401,7 @@ class RigControls {
     refresh(); setInterval(refresh, 33);
   }
 }
-const api = { RigControls, RigWizard, normalize, valid, mappedInput };
+const api = { RigControls, RigWizard, normalize, valid, mappedInput, feedbackForce };
 if (typeof module !== 'undefined') module.exports = api;
 else root.ApexRig = api;
 })(typeof window === 'undefined' ? globalThis : window);

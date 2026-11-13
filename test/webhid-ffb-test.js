@@ -47,7 +47,7 @@ class FakeDevice {
   const browserPad={...pads[0],axes:[0,-1,-1,-1,-1,-1],buttons:[0]};
   controls.browserDevices=()=>[browserPad];controls.hid=hid;
   controls.profile={steer:{device:'r3',axis:0,left:-1,center:0,right:1},throttle:{device:'r3',axis:2,rest:-1,full:1},brake:{device:'r3',axis:5,rest:-1,full:1}};
-  controls.ffb=true;controls.feedback({aligningTorque:-1000},true);await hid.busy;
+  controls.strength=0.25;controls.ffb=true;controls.feedback({aligningTorque:-100000},true);await hid.busy;
   assert.equal(controls.force,-0.25);
   assert.equal(new DataView(Uint8Array.from(device.calls.filter(c=>c.id===5).at(-1).data).buffer).getInt16(1,true),-Math.round(32767*0.2*0.25));
   controls.wizard=new RigWizard();controls.feedback({aligningTorque:1000},true);await hid.busy;

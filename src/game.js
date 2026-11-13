@@ -224,6 +224,18 @@ function surfaceAt(tr, i, d) {
   return 'grass';
 }
 
+// The same world-anchored surface ripple drives wheel loads and steering texture.
+function surfaceRipple(sim, wheel) {
+  const name = sim.surf[wheel];
+  if (name === 'kerb') return 0.22 * Math.sin(sim.s * TAU / 1.5 + wheel);
+  if (LOOSE[name]) return SURF[name].bump * Math.sin(sim.x * 1.9 + wheel * 2.1) * Math.sin(sim.z * 2.3 + wheel);
+  if (name !== 'asphalt') return 0;
+  const cf = Math.cos(sim.psi), sf = Math.sin(sim.psi);
+  const x = sim.x + cf * XW[wheel] - sf * YW[wheel], z = sim.z + sf * XW[wheel] + cf * YW[wheel];
+  const patch = 0.7 + 0.3 * Math.sin(x * 0.025 + z * 0.017);
+  return 0.018 * patch * (0.65 * Math.sin(x * 2.7 + z * 0.31) + 0.35 * Math.sin(x * 9.1 - z * 4.7));
+}
+
 // ---------------- Car ----------------
 const CAR = {
   m: 850, Iz: 1150, wb: 3.6, b: 0.46 * 3.6, a: 0.54 * 3.6, h: 0.3, tw: 1.6, R: 0.36,
@@ -287,7 +299,7 @@ class Sim {
     const tr = this.track, i = Math.round(s / tr.ds) % tr.N;
     this.x = tr.px[i] - tr.tz[i] * d; this.z = tr.pz[i] + tr.tx[i] * d; this.psi = Math.atan2(tr.tz[i], tr.tx[i]);
     this.vx = 0; this.vz = 0; this.r = 0; this.gear = 1; this.rpm = CAR.idle; this.shiftT = 0;
-    this.thr = 0; this.brk = 0; this.steer = 0; this.aligningTorque = 0; this.alpha = [0, 0, 0, 0]; this.ax = 0; this.ay = 0;
+    this.thr = 0; this.brk = 0; this.steer = 0; this.aligningTorque = 0; this.roadFeedback = 0; this.roadFilter = 0; this.alpha = [0, 0, 0, 0]; this.ax = 0; this.ay = 0;
     this.idx = i; this.s = s; this.d = d; this.drsOpen = false; this.overtake = false;
     this.lock = [0, 0, 0, 0]; this.spin = [0, 0, 0, 0]; this.surf = ['asphalt', 'asphalt', 'asphalt', 'asphalt'];
     this.tcActive = false; this.absActive = false; this.slipMax = 0; this.revT = 0; this.impact = 0; this.speed = 0; this.Fz = [0, 0, 0, 0]; this.tow = 0; this.gripK = 1;
@@ -351,17 +363,22 @@ class Sim {
     const dfF = q * clF * floorK * (1 - 0.14 * tow), dfR = q * clR * floorK * (1 - 0.07 * tow), drag = q * cdA * (1 - 0.3 * tow);
 
     // --- loads ---
-    const Fz = this.Fz;
+    const Fz = this.Fz; let roadInput = 0;
     const m = c.m - BASE_FUEL + this.fuel;
     const lonT = m * this.ax * c.h / c.wb, latT = m * this.ay * c.h / c.tw;
     for (let w = 0; w < 4; w++) {
       const front = w < 2;
       let f = m * G * (front ? c.b : c.a) / c.wb / 2 + (front ? dfF : dfR) / 2 + (front ? -lonT : lonT) / 2;
       f += (YW[w] > 0 ? -1 : 1) * latT * (front ? 0.5 : 0.5);
-      if (this.surf[w] === 'kerb') f *= 1 + 0.22 * Math.sin(this.s * TAU / 1.5 + w); // 1.5 m kerb teeth
-      else if (LOOSE[this.surf[w]]) f *= 1 + SURF[this.surf[w]].bump * Math.sin(this.x * 1.9 + w * 2.1) * Math.sin(this.z * 2.3 + w); // rough ground
-      Fz[w] = Math.max(f, 0);
+      f = Math.max(f, 0);
+      const ripple = f * surfaceRipple(this, w);
+      if (front) roadInput += (w === 0 ? 1 : -1) * ripple;
+      Fz[w] = Math.max(f + ripple, 0);
     }
+    // Two 12 Hz poles retain bumps while suppressing texture above the browser's useful update bandwidth.
+    const roadTarget = clamp(roadInput / 300, -1.5, 1.5) * Math.min(v / 6, 1), roadBlend = 1 - Math.exp(-TAU * 12 * dt);
+    this.roadFilter += (roadTarget - this.roadFilter) * roadBlend;
+    this.roadFeedback += (this.roadFilter - this.roadFeedback) * roadBlend;
 
     // --- engine/ERS drive force ---
     let drive = 0;
@@ -1985,7 +2002,7 @@ function create(canvas, opts = {}) {
   };
 }
 
-const api = { TUNE, create, buildTrack, TRACKS, TEAMS, teamDef, trackDef, speedProfile, Sim, Race, collide, autopilot, ghostPose, REC_DS, fmtTime, CIRCUIT, CAR, COMPOUNDS, DEFAULT_SETUP, surfaceAt };
+const api = { TUNE, create, buildTrack, TRACKS, TEAMS, teamDef, trackDef, speedProfile, Sim, Race, collide, autopilot, ghostPose, REC_DS, fmtTime, CIRCUIT, CAR, COMPOUNDS, DEFAULT_SETUP, surfaceAt, surfaceRipple };
 root.ApexGP = api;
 if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

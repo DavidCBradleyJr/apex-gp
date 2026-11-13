@@ -22,16 +22,16 @@ assert.equal(mappedInput(profile, [devices[0]]), null, 'unplugged pedal must inv
 assert.equal(mappedInput({ ...profile, steer: {} }, devices), null);
 const controls = new RigControls();
 controls.bridge = true; controls.devices = devices; controls.profile = { ...profile, up: { device: 'moza', button: 0 } };
-controls.updated = performance.now();
+controls.updated = performance.now(); controls.strength = 0.25;
 const edges = [];
 controls.read(edges); devices[0].buttons[0] = 1; controls.read(edges); controls.read(edges);
 assert.deepEqual(edges, ['up'], 'held paddle should shift only once');
-controls.ffb = true; controls.feedback({ aligningTorque: 1000 }, true);
+controls.ffb = true; controls.feedback({ aligningTorque: 100000 }, true);
 assert.equal(controls.force, 0.25); assert.equal(controls.target, 1);
 controls.feedback({ aligningTorque: Infinity }, true); assert.equal(controls.force, 0);
-controls.feedback({ aligningTorque: 10000 }, true); assert.equal(controls.force, 0.25);
-controls.invert = true; controls.feedback({ aligningTorque: 1000 }, true); assert.equal(controls.force, -0.25);
-controls.feedback({ aligningTorque: 1000 }, false); assert.equal(controls.force, 0);
+controls.feedback({ aligningTorque: 1000000 }, true); assert.equal(controls.force, 0.25);
+controls.invert = true; controls.feedback({ aligningTorque: 100000 }, true); assert.equal(controls.force, -0.25);
+controls.feedback({ aligningTorque: 100000 }, false); assert.equal(controls.force, 0);
 controls.ffb = true; controls.updated = performance.now() - 151; assert.equal(controls.read([]), null); assert(!controls.ffb);
 controls.ffb = true; controls.block(); assert(!controls.ffb); assert.equal(controls.force, 0);
 // Linear wheel steering must retain full lock at high speed; pad steering remains speed-sensitive.
