@@ -304,7 +304,7 @@ class Sim {
     const tr = this.track, i = Math.round(s / tr.ds) % tr.N;
     this.x = tr.px[i] - tr.tz[i] * d; this.z = tr.pz[i] + tr.tx[i] * d; this.psi = Math.atan2(tr.tz[i], tr.tx[i]);
     this.vx = 0; this.vz = 0; this.r = 0; this.gear = 1; this.rpm = CAR.idle; this.shiftT = 0;
-    this.thr = 0; this.brk = 0; this.steer = 0; this.aligningTorque = 0; this.roadFeedback = 0; this.roadFilter = 0; this.alpha = [0, 0, 0, 0]; this.ax = 0; this.ay = 0;
+    this.thr = 0; this.brk = 0; this.steer = 0; this.aligningTorque = 0; this.roadFeedback = 0; this.roadFilter = 0; this.alpha = [0, 0, 0, 0]; this.ax = 0; this.ay = 0; this.engPhase = 0; this.engineFeedback = 0;
     this.idx = i; this.s = s; this.d = d; this.drsOpen = false; this.overtake = false;
     this.lock = [0, 0, 0, 0]; this.spin = [0, 0, 0, 0]; this.surf = ['asphalt', 'asphalt', 'asphalt', 'asphalt'];
     this.tcActive = false; this.absActive = false; this.slipMax = 0; this.revT = 0; this.impact = 0; this.speed = 0; this.Fz = [0, 0, 0, 0]; this.tow = 0; this.gripK = 1;
@@ -353,6 +353,9 @@ class Sim {
     if (this.gear >= 1 && rpm < 5500) rpm = Math.max(rpm, c.idle + thr * 6500); // clutch slip at launch
     if (this.gear === -1) rpm = c.idle + thr * 3000;
     this.rpm = lerp(this.rpm, rpm, Math.min(1, dt * 30));
+    // engine shake for the wheel: a sub-harmonic of the firing rate (8-27 Hz) that a frame-rate FFB update can carry, harder with revs and load
+    this.engPhase = (this.engPhase + dt * this.rpm / 480) % 1;
+    this.engineFeedback = this.fuel > 0 ? Math.sin(TAU * this.engPhase) * (0.4 + 0.6 * thr) * (0.5 + 0.5 * clamp(this.rpm / c.limiter, 0, 1)) : 0;
     if (set.autoGear && this.gear >= 1 && this.shiftT <= 0) {
       if (this.rpm > 12150 && this.gear < 8) this.shift(1);
       else if (this.gear > 1 && wheelRpm * c.ratios[gi] < 7600) this.shift(-1);

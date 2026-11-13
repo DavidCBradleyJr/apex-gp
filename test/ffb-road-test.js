@@ -37,6 +37,16 @@ assert.equal(feedbackForce({aligningTorque:0,roadFeedback:1,speed:0}),0);
 assert.equal(feedbackForce({aligningTorque:0,roadFeedback:1,speed:40},0),0,'road slider can remove added texture');
 assert(feedbackForce({aligningTorque:406,roadFeedback:0,speed:40})>0.5,'steering load should be more perceptible than the previous 0.406 signal');
 assert(feedbackForce({aligningTorque:744,roadFeedback:0,speed:40})<1,'normal corners retain unclipped headroom');
+{ // engine vibration: off by default, buzzes at idle, harder at high revs on throttle, and stays a light effect
+  const shake=(thr,rpm)=>{const sim=new Sim(buildTrack());let peak=0,signs=0,last=0;sim.rpm=rpm;sim.engPhase=0;
+    for(let i=0;i<240;i++){sim.step(DT,{analog:true,steer:0,throttle:thr,brake:0});const e=sim.engineFeedback;peak=Math.max(peak,Math.abs(e));if(Math.sign(e)!==Math.sign(last))signs++;last=e;}
+    return {peak,signs};};
+  const idle=shake(0,4000),rev=shake(1,12000);
+  assert(idle.peak>0.1&&idle.signs>4,'the engine shakes at idle');
+  assert(rev.peak>idle.peak*1.5,'more revs and throttle shake harder');
+  assert.equal(feedbackForce({aligningTorque:0,roadFeedback:0,speed:0,engineFeedback:1}),0,'engine vibration is opt-in per call');
+  const f=feedbackForce({aligningTorque:0,roadFeedback:0,speed:0,engineFeedback:1},0,1,1);assert(f>0&&f<=0.25,'full engine vibration stays a light buzz');
+}
 assert.equal(feedbackForce({aligningTorque:Infinity,roadFeedback:NaN,speed:40}),0,'bad telemetry cannot become force');
 for(const kind of kinds)for(const road of [0,0.6,1])for(const direction of [-1,1]){
   const force=feedbackForce({...runs[kind].sim,aligningTorque:direction*100000},road);

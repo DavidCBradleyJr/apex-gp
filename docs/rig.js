@@ -21,12 +21,13 @@ function normalize(binding, value, steering = false) {
   const v = (value - binding.center) / (right ? binding.right - binding.center : binding.center - binding.left);
   return Math.abs(v) < 0.005 ? 0 : clamp(v, -1, 1);
 }
-function feedbackSignal(sim, roadFeel = 0.6, gain = 1) {
+function feedbackSignal(sim, roadFeel = 0.6, gain = 1, engineFeel = 0) {
   const aligning = Number.isFinite(sim.aligningTorque) ? Math.tanh(sim.aligningTorque / 700) : 0;
   const texture = Number.isFinite(sim.roadFeedback) ? sim.roadFeedback * clamp(Math.abs(sim.speed || 0) / 3, 0, 1) : 0;
-  return aligning * gain + texture * roadFeel;
+  const engine = Number.isFinite(sim.engineFeedback) ? clamp(sim.engineFeedback, -1, 1) * 0.25 : 0; // at 100% a light buzz, never a steering load
+  return aligning * gain + texture * roadFeel + engine * engineFeel;
 }
-function feedbackForce(sim, roadFeel = 0.6, gain = 1) { return clamp(feedbackSignal(sim, roadFeel, gain), -1, 1); }
+function feedbackForce(sim, roadFeel = 0.6, gain = 1, engineFeel = 0) { return clamp(feedbackSignal(sim, roadFeel, gain, engineFeel), -1, 1); }
 function mappedInput(profile, devices) {
   if (!profile || !valid(profile.steer, true) || !valid(profile.throttle) || !valid(profile.brake)) return null;
   const raw = ['steer', 'throttle', 'brake'].map(k => axis(profile[k], devices));
@@ -134,7 +135,7 @@ class RigWizard {
 
 class RigControls {
   constructor() {
-    this.devices = []; this.profile = {}; this.enabled = true; this.ffb = false; this.strength = 0.6; this.roadFeel = 0.6; this.invert = false;
+    this.devices = []; this.profile = {}; this.enabled = true; this.ffb = false; this.strength = 0.6; this.roadFeel = 0.6; this.engineFeel = 0.4; this.invert = false;
     this.outputLimit=MAX_FORCE; this.gain=1; this.damping=0; this.friction=0; this.smoothing=1000/(2*Math.PI*12); this.clipped=false; this.bridgeAdvanced=false;
     this.bridge = false; this.updated = 0; this.feedbackAt = 0; this.prev = {}; this.force = 0; this.active = false; this.error = '';
     this.suspended = false;
@@ -148,7 +149,7 @@ class RigControls {
     const tuning = this.profile.feedback || {};
     if (Number.isFinite(tuning.strength)) this.strength = clamp(tuning.strength, 0, 1);
     if (Number.isFinite(tuning.roadFeel)) this.roadFeel = clamp(tuning.roadFeel, 0, 1);
-    for (const [key,max] of [['outputLimit',1],['gain',3],['damping',1],['friction',1],['smoothing',50]]) {
+    for (const [key,max] of [['outputLimit',1],['gain',3],['damping',1],['friction',1],['smoothing',50],['engineFeel',1]]) {
       if (Number.isFinite(tuning[key])) this[key]=clamp(tuning[key],0,max);
     }
     this.invert = tuning.invert === true;
@@ -222,7 +223,7 @@ class RigControls {
     this.target = d ? d.id : null;
     sim.roadSmoothing=this.smoothing;
     // Aligning torque comes from the front tyres; grip loss lightens the wheel. Never substitute rumble.
-    const signal = feedbackSignal(sim, this.roadFeel, this.gain);
+    const signal = feedbackSignal(sim, this.roadFeel, this.gain, this.engineFeel);
     this.clipped=this.active && Math.abs(signal)>=1;
     this.force = this.active ? clamp(signal, -1, 1) * this.strength * (this.invert ? -1 : 1) : 0;
     if (!this.bridge) { if (this.active) this.hid.write(this.force,this.feedbackSettings()); else this.hid.stop(); }
@@ -230,7 +231,7 @@ class RigControls {
   stop() { this.force = 0; this.clipped=false; this.active = false; this.ffb = false; this.hid.stop(); }
   save() {
     this.profile.enabled=this.enabled;
-    this.profile.feedback=Object.fromEntries(['strength','roadFeel','invert','outputLimit','gain','damping','friction','smoothing'].map(key=>[key,this[key]]));
+    this.profile.feedback=Object.fromEntries(['strength','roadFeel','engineFeel','invert','outputLimit','gain','damping','friction','smoothing'].map(key=>[key,this[key]]));
     try {
       localStorage.setItem('apexgp.rig.v1',JSON.stringify(this.profile));
       this.settingsStatus='Rig settings saved in this browser.'; return true;
@@ -378,6 +379,7 @@ class RigControls {
     road.type = 'range'; road.min = '0'; road.max = '100'; road.value = String(Math.round(this.roadFeel * 100));
     const roadValue = make('output', road.value + '%', roadLabel);
     road.oninput = () => { this.roadFeel = +road.value / 100; roadValue.textContent = road.value + '%'; saveFeedback(); };
+    slider('engineFeel','Engine vibration',100,100,'%','A light rumble that rises with revs and throttle. 0 turns it off.');
     slider('smoothing','Road smoothing',50,1,' ms','0 is sharpest. Higher values soften road detail; start near 13 ms. Low values may buzz when frame rate drops.');
     const damping=slider('damping','Damping',100,100,'%','Resists fast wheel movement. Add small amounts to calm oscillation; too much hides detail.');
     const friction=slider('friction','Friction',100,100,'%','Adds resistance during wheel movement. Keep low to preserve small steering cues.');
