@@ -106,6 +106,12 @@ class FakeDevice {
   selected=[new FakeDevice()];await hid.connect();disconnects.forEach(fn=>fn({device:selected[0]}));assert(!hid.ready);assert(error.includes('disconnected'));
   selected=[{...fixture,productId:2}];await assert.rejects(hid.connect(),/No supported/);
   selected=[];await assert.rejects(hid.connect(),/No supported/);
+  { // silent reconnect: reuses a granted wheel without the chooser, and quietly gives up when none is granted
+    let asked=0;const granted=[new FakeDevice()];navigator.hid.getDevices=async()=>granted;const rq=navigator.hid.requestDevice;navigator.hid.requestDevice=async o=>{asked++;return rq(o);};
+    const quiet=new MozaHidFfb(()=>{});await quiet.connect(true);assert(quiet.ready&&asked===0,'granted wheel reopens silently');await quiet.disconnect();
+    granted.length=0;assert.equal(await quiet.connect(true),false);assert(!quiet.ready&&asked===0,'no grant: no chooser, no error');
+    navigator.hid.requestDevice=rq;
+  }
   delete global.window;delete global.navigator;
   console.log('WebHID R3: real descriptor, Windows selector order, finite effects, caps, explicit start, allocation, device matching, in-flight stop, errors and disconnect: PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -153,6 +153,8 @@ class RigControls {
       if (Number.isFinite(tuning[key])) this[key]=clamp(tuning[key],0,max);
     }
     this.invert = tuning.invert === true;
+    this.ffbWanted = this.profile.ffbWanted === true; // the player's Steering FFB choice; arming still waits for a click (Go to grid / Resume)
+    if (this.ffbWanted) setTimeout(() => this.reconnect(), 0);
     this.block = () => { this.suspended = true; this.silence(); }; // no torque while the page is in the background; FFB stays armed for return
     this.focus = () => { if (!document.hidden) this.suspended = false; };
     this.visibility = () => { if (document.hidden) this.block(); else this.focus(); };
@@ -231,8 +233,18 @@ class RigControls {
   // silence(): no torque now, but stay armed (pause, menu, restart). stop(): also disarm (errors, setup and safety changes).
   silence() { this.force = 0; this.clipped=false; this.active = false; this.hid.stop(); }
   stop() { this.silence(); this.ffb = false; }
+  // Reopen the wheel the player turned FFB on for: silently if Chrome already granted it, otherwise (ask, from a click)
+  // through Chrome's device chooser, at most once per page load. Resolves true when browser FFB is connected.
+  async reconnect(ask = false) {
+    if (this.hid.ready) return true;
+    if (!this.ffbWanted || this.bridge || !this.hid.available || this.hid.connecting || (ask && this.askedHid)) return false;
+    if (ask) this.askedHid = true;
+    try { await this.hid.connect(!ask); this.error = ''; }
+    catch (e) { this.error = e.name === 'NotFoundError' ? 'No wheel selected. Connect browser FFB in Sim rig settings when ready.' : e.message + ' On Linux, check HID device access permissions.'; }
+    return this.hid.ready;
+  }
   save() {
-    this.profile.enabled=this.enabled;
+    this.profile.enabled=this.enabled; this.profile.ffbWanted=this.ffbWanted;
     this.profile.feedback=Object.fromEntries(['strength','roadFeel','engineFeel','invert','outputLimit','gain','damping','friction','smoothing'].map(key=>[key,this[key]]));
     try {
       localStorage.setItem('apexgp.rig.v1',JSON.stringify(this.profile));
@@ -363,9 +375,9 @@ class RigControls {
       catch (e) { this.error = e.name === 'NotFoundError' ? 'No wheel selected. You can connect it when ready.' : e.message + ' On Linux, check HID device access permissions.'; }
       refresh();
     };
-    make('p', 'Browser FFB works in desktop Chrome/Edge. Other wheelbases can use the local bridge. Enable Steering FFB yourself each session.');
+    make('p', 'Browser FFB works in desktop Chrome/Edge. Other wheelbases can use the local bridge. Steering FFB ON is remembered: the wheel reconnects by itself, and Chrome asks once if it needs permission.');
     const ffb = make('button', 'Steering FFB: OFF'); ffb.type = 'button'; ffb.className = 'opt';
-    ffb.onclick = () => { if(this.ffb)this.stop(); else this.ffb=true; ffb.textContent = 'Steering FFB: ' + (this.ffb ? 'ON' : 'OFF'); };
+    ffb.onclick = () => { if(this.ffb)this.stop(); else this.ffb=true; this.ffbWanted=this.ffb; this.save(); ffb.textContent = 'Steering FFB: ' + (this.ffb ? 'ON' : 'OFF'); };
     const saveFeedback = () => this.save();
     const slider=(key,label,max,scale,unit,help)=>{
       const box=make('div'), labelEl=make('label',label,box), input=make('input','',labelEl), value=make('output','',box);

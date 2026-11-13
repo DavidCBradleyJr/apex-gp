@@ -422,12 +422,14 @@
   $('clearBtn').onclick = () => { if (game) game.clearBest(); };
   function start() {
     if (!game || !t || !t.ready) return; // the car model is still loading
-    armFfb(); game.begin(Object.assign({}, setup, { time: setup.time === 'golden' ? 7 : 38 })); game.camera(setup.camera); canvas.focus();
+    connectFfb(); game.begin(Object.assign({}, setup, { time: setup.time === 'golden' ? 7 : 38 })); game.camera(setup.camera); canvas.focus();
   }
   $('go').onclick = start;
   // a calibrated wheel with FFB connected always drives with FFB: resume and restart (both clicks) arm it
-  const armFfb = () => { const d = controls.allDevices(), w = d.find(x => controls.profile.steer && x.key === controls.profile.steer.device); if (controls.enabled && controls.ffbAvailable(w, d) && ApexRig.mappedInput(controls.profile, d)) controls.ffb = true; };
-  $('ovResume').onclick = () => { armFfb(); game.resume(); canvas.focus(); };
+  const armFfb = () => { const d = controls.allDevices(), w = d.find(x => controls.profile.steer && x.key === controls.profile.steer.device); if (controls.ffbWanted && controls.enabled && controls.ffbAvailable(w, d) && ApexRig.mappedInput(controls.profile, d)) controls.ffb = true; };
+  // inside the click, so Chrome may show its device chooser when the wheel was never granted to this site
+  const connectFfb = () => { armFfb(); controls.reconnect(true).then(ok => { if (ok) armFfb(); }); };
+  $('ovResume').onclick = () => { connectFfb(); game.resume(); canvas.focus(); };
   $('ovMenu').onclick = () => game.menu();
   $('ovRestart').onclick = start;
   addEventListener('keydown', (e) => {

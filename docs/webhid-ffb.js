@@ -116,13 +116,15 @@ class MozaHidFfb {
     } else await device.sendReport(3,conditionForce(block,0));
     return block;
   }
-  async connect() {
+  // silent: reopen a wheel Chrome already granted (no chooser, no user click needed); resolves false if there is none
+  async connect(silent=false) {
     if (this.connecting || this.ready) return;
     if (!this.available) throw new Error('Direct wheel FFB needs desktop Chrome or Edge on HTTPS or localhost.');
     this.connecting=true;
     try {
-      const devices=await navigator.hid.requestDevice({filters:[{vendorId:VENDOR,productId:PRODUCT}]});
+      const devices=silent?await navigator.hid.getDevices():await navigator.hid.requestDevice({filters:[{vendorId:VENDOR,productId:PRODUCT}]});
       const device=devices.find(supported);
+      if (!device && silent) return false;
       if (!device) throw new Error('No supported Moza R3 FFB interface was selected. Other wheel layouts can use the local bridge.');
       if (this.device) await this.disconnect();
       this.device=device;
