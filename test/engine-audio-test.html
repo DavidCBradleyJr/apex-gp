@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Engine audio checks</title>
+<style>body { background:#15181d; color:#f3f4f6; font:14px system-ui; } pre { white-space:pre-wrap; } iframe { width:100%; height:900px; border:0; }</style>
+<pre id="result">Running…</pre>
+<iframe id="settings" title="Engine sound settings"></iframe>
+<script src="../src/game.js"></script>
+<script>
+// Serve the project root, then open /test/engine-audio-test.html. Real offline Web Audio; UI uses a fake renderer and no hardware.
+(async () => {
+  const check = (ok, message) => { if (!ok) throw Error(message); }, lines = [];
+  const { EngineAudio, ENGINE_ERAS, CAR } = ApexGP, rate = 48000;
+  const state = id => ({ setup:{engineEra:id}, gear:5, rpm:12000, thr:1, brk:0, shiftT:0, ers:1, speed:0, overtake:false, surf:['asphalt'], slipMax:0, impact:0 });
+  const stats = (buffer, start = 0.2, end = 0.6) => {
+    const d = buffer.getChannelData(0); let energy = 0, diff = 0, peak = 0, n = 0;
+    for (let i = Math.ceil(start * rate); i < Math.min(d.length, end * rate); i++) {
+      check(Number.isFinite(d[i]), 'non-finite audio sample'); peak = Math.max(peak, Math.abs(d[i]));
+      energy += d[i] ** 2; diff += (d[i] - d[i - 1]) ** 2; n++;
+    }
+    return { rms:Math.sqrt(energy / n), peak, brightness:Math.sqrt(diff / (energy || 1)) };
+  };
+  const render = async (id, options = {}) => {
+    const ac = new OfflineAudioContext(2, rate * 0.65, rate), audio = new EngineAudio(), sim = Object.assign(state(id), options.sim);
+    audio.init(ac); audio.muted = !!options.muted;
+    audio.update(sim, options.on !== false, options.near || null, !!options.inside);
+    const buffer = await ac.startRendering();
+    return { audio, sim, buffer, ...stats(buffer) };
+  };
+  const expected = (era, rpm) => (era.idle + Math.max(0, Math.min(1.08, (rpm - CAR.idle) / (CAR.limiter - CAR.idle))) * (era.redline - era.idle)) / 60 * era.cylinders / 2;
+  const signatures = [];
+  for (const era of ENGINE_ERAS) {
+    const out = await render(era.id), idle = await render(era.id, {sim:{rpm:CAR.idle,thr:0.08}}), helmet = await render(era.id, {inside:true});
+    check(out.rms > 0.02 && out.peak < 0.95, era.id + ': silent or clipped');
+    check(idle.rms < out.rms * 0.8 && idle.rms > 0.001, era.id + ': throttle dynamics missing');
+    check(helmet.brightness < out.brightness, era.id + ': helmet should soften the exhaust');
+    const hz = out.audio.oscs[0][0].frequency.value;
+    check(Math.abs(hz - expected(era, out.sim.rpm)) < 1, era.id + ': incorrect audible firing order/rev range');
+    const boost = await render(era.id, {sim:{speed:60,overtake:true}});
+    check((boost.audio.tg.gain.value > 0.001) === era.turbo, era.id + ': turbo on the wrong era');
+    check((boost.audio.ersG.gain.value > 0.001) === era.turbo, era.id + ': electric whine on the wrong era');
+    const rival = await render(era.id, {near:{rpm:11000,dist:8,closing:40,pan:0.8}});
+    check(Math.abs(rival.audio.oppO[0][0].frequency.value - expected(era, 11000) * (1 + 40 / 343)) < 1, era.id + ': rival era/doppler');
+    check(rival.audio.oppPan.pan.value > 0.7, 'rival stereo position');
+    const d = out.buffer.getChannelData(0); signatures.push({id:era.id, data:d.slice(rate * 0.3, rate * 0.4)});
+    lines.push(era.label + ': ' + hz.toFixed(0) + ' Hz firing order; RMS ' + out.rms.toFixed(3) + ', peak ' + out.peak.toFixed(3));
+  }
+  for (let i = 0; i < signatures.length; i++) for (let j = i + 1; j < signatures.length; j++) {
+    let diff = 0; signatures[i].data.forEach((v, k) => { diff += (v - signatures[j].data[k]) ** 2; });
+    check(Math.sqrt(diff / signatures[i].data.length) > 0.03, 'era waveforms must differ');
+  }
+  check((await render('v10', {muted:true})).peak < 1e-6, 'mute must silence all audio');
+  check((await render('v10', {on:false})).peak < 1e-6, 'inactive session must be silent');
+  check((await render('bad-saved-era')).audio.era.id === 'v6', 'invalid era fallback');
+
+  // Exercise shifts, limiter, impacts, surface effects, pause/resume and era changes on one running graph.
+  const ac = new OfflineAudioContext(2, rate * 2.2, rate), audio = new EngineAudio(), sim = state('v10');
+  audio.init(ac); audio.update(sim, true, null, false);
+  const steps = [0.2,0.3,0.5,0.65,0.85,1.05,1.25,1.5,1.8].map(t => ac.suspend(t));
+  const rendering = ac.startRendering();
+  for (let i = 0; i < steps.length; i++) {
+    await steps[i];
+    if (i === 0) { sim.gear = 6; sim.shiftT = 0.045; }
+    if (i === 1) { sim.shiftT = 0; sim.rpm = 8500; }
+    if (i === 2) { sim.gear = 4; sim.thr = 0; sim.brk = 0.9; sim.rpm = 11000; }
+    if (i === 3) { sim.rpm = CAR.limiter; sim.thr = 1; sim.brk = 0; }
+    if (i === 4) { sim.impact = 12; sim.speed = 70; sim.surf = ['kerb','gravel']; sim.slipMax = 1.5; }
+    if (i === 6) { sim.setup.engineEra = 'v12'; sim.impact = 0; sim.gear = 1; }
+    if (i === 7) audio.muted = true;
+    if (i === 8) audio.muted = false;
+    audio.update(sim, i !== 5, null, false);
+    if (i === 2) check(audio.blipT > ac.currentTime, 'downshift throttle blip missing');
+    if (i === 6) check(audio.blipT === 0 && audio.era.id === 'v12', 'resume must not invent a downshift');
+    await ac.resume();
+  }
+  const transient = stats(await rendering, 0, 2.2);
+  check(transient.peak < 0.95 && transient.rms > 0.01, 'transient output clipped or silent');
+  lines.push('PASS: all four real Web Audio renders, throttle/helmet dynamics, rival doppler/pan, turbo/ERS gating, shifts, limiter, surfaces, mute and pause.');
+
+  // Run the actual standalone menu code, stubbing only WebGL and rig hardware.
+  const frame = document.getElementById('settings'), key = 'apexgp.settings.v1', saved = localStorage.getItem(key);
+  try {
+    const html = (await (await fetch('../docs/index.html')).text()).replace(/<script src="[^"]*"><\/script>/g, '');
+    const stub = `<script src="/docs/game.js"><\/script><script>
+      window.THREE = {}; window.ApexRig = {RigControls:class {mount(){} allDevices(){return []}}};
+      ApexGP.create = (canvas, opts) => {
+        window.creationSetup = opts.setup;
+        setTimeout(() => opts.onTelemetry({phase:'menu',ready:true,camera:'CHASE',fxq:0,fxAuto:false,fps:60}), 0);
+        return {track:{N:4,L:4200,name:'Test circuit',turns:10,px:[0,100,100,0],pz:[0,0,100,100]},sim:{setup:opts.setup},overview(){},destroy(){},team(){},graphics(){},camera(){},pause(){},begin(s){window.begun=s;}};
+      };<\/script>`;
+    const load = async settings => {
+      localStorage.setItem(key, JSON.stringify(settings));
+      const loaded = new Promise(resolve => { frame.onload = resolve; });
+      frame.srcdoc = html.replace('<head>', '<head><base href="/docs/">').replace('<script>\n// Standalone', stub + '<script>\n// Standalone');
+      await loaded;
+      await new Promise(resolve => setTimeout(resolve, 50));
+      return frame.contentWindow;
+    };
+    let win = await load({tc:false}), select = win.document.getElementById('engineEra');
+    check(select.value === 'v6' && select.options.length === 4, 'old settings need modern V6 default');
+    check(select.labels[0].textContent.includes('Engine sound'), 'selector needs a visible accessible label');
+    for (const era of ENGINE_ERAS) {
+      select.value = era.id; select.dispatchEvent(new Event('change'));
+      check(JSON.parse(localStorage.getItem(key)).engineEra === era.id, 'era not persisted');
+      check(JSON.parse(localStorage.getItem(key)).tc === false, 'era must preserve other settings');
+      win.document.getElementById('go').click(); check(win.begun.engineEra === era.id, 'era missing from game.begin');
+    }
+    win = await load(JSON.parse(localStorage.getItem(key))); select = win.document.getElementById('engineEra');
+    check(select.value === 'v12' && win.creationSetup.engineEra === 'v12', 'reload or circuit creation lost era');
+    const circuit = [...win.document.querySelectorAll('#sessionOpts button')].find(b => b.textContent.startsWith('Circuit'));
+    circuit.click(); check(win.creationSetup.engineEra === 'v12', 'changing circuit lost era');
+    frame.style.width = '350px';
+    check(select.getBoundingClientRect().right <= frame.clientWidth, 'engine selector overflows narrow menu');
+    win = await load({engineEra:'corrupt'});
+    check(win.document.getElementById('engineEra').value === 'v6', 'corrupt saved era fallback');
+    // Leave the most useful era visible for visual inspection.
+    select = win.document.getElementById('engineEra'); select.value = 'v10'; select.dispatchEvent(new Event('change'));
+    frame.style.width = '100%';
+    lines.push('PASS: settings labels, four choices, old/corrupt data, save/reload, begin, circuit changes and narrow layout; no WebGL or hardware.');
+  } finally {
+    if (saved === null) localStorage.removeItem(key); else localStorage.setItem(key, saved);
+  }
+  document.getElementById('result').textContent = lines.join('\n');
+  document.documentElement.dataset.result = 'pass';
+})().catch(e => { document.getElementById('result').textContent = 'FAIL: ' + e.stack; document.documentElement.dataset.result = 'fail'; });
+</script>
+</html>

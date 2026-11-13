@@ -29,6 +29,9 @@
   .keys { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; font-size: 13px; color: #c3c9d1; }
   .keys span:nth-child(even) { font: 600 15px 'Barlow Condensed', sans-serif; color: var(--text); text-align: right; }
   .note { font-size: 12px; color: var(--dim); }
+  .engine-sound { display: grid; gap: 6px; font-size: 13px; }
+  #engineEra { box-sizing: border-box; width: 100%; min-height: 44px; padding: 8px; background: #12151b; color: var(--text); border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+  #engineEra:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   #rigControls { display: grid; gap: 12px; margin-top: 12px; }
   #rigControls label { display: grid; gap: 6px; font-size: 13px; }
@@ -119,6 +122,10 @@
       <div class="opts"><button class="opt" id="mapBtn" type="button"></button><button class="opt" id="clearBtn" type="button">Clear best lap<b>RESET</b></button></div>
       <div class="label">CAR SETUP</div>
       <div class="opts" id="carOpts"></div>
+      <label class="engine-sound" for="engineEra">Engine sound
+        <select id="engineEra" aria-describedby="engineNote"></select>
+      </label>
+      <div class="note" id="engineNote"></div>
       <div class="label">DISPLAY</div>
       <div class="opts" id="dispOpts"></div>
     </div>
@@ -201,20 +208,23 @@
 (function () {
   const $ = (id) => document.getElementById(id), canvas = $('c'), A = window.ApexGP;
   if (!A || !window.THREE) { $('status').textContent = 'The 3D engine did not load. Reload the page.'; return; }
-  const setup = { track: 'kestrel', team: 'apex', camera: 0, mode: 'tt', laps: 3, skill: 'pro', compound: 'soft', tc: true, abs: true, autoGear: true, line: 'full', ghost: true, time: 'afternoon', gfx: 'auto', units: 'kmh', map: true };
+  const setup = { track: 'kestrel', team: 'apex', camera: 0, mode: 'tt', laps: 3, skill: 'pro', compound: 'soft', tc: true, abs: true, autoGear: true, line: 'full', ghost: true, time: 'afternoon', gfx: 'auto', units: 'kmh', map: true, engineEra: 'v6' };
   // settings are remembered between visits
   const KEY = 'apexgp.settings.v1';
   try { const o = JSON.parse(localStorage.getItem(KEY) || '{}'); for (const k in setup) if (typeof o[k] === typeof setup[k]) setup[k] = o[k]; } catch (e) { /* first visit or storage blocked */ }
   if (!A.TRACKS.some(x => x.id === setup.track)) setup.track = 'kestrel';
+  if (!A.ENGINE_ERAS.some(x => x.id === setup.engineEra)) setup.engineEra = 'v6';
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(setup)); } catch (e) { /* storage blocked */ } };
   const CAMS = ['CHASE', 'T-CAM', 'COCKPIT'];
   const controls = new ApexRig.RigControls(); controls.mount($('rigControls'));
   let game = null, map = null, t = null;
+  for (const era of A.ENGINE_ERAS) $('engineEra').append(new Option(era.label, era.id));
+  $('engineEra').onchange = () => { setup.engineEra = $('engineEra').value; save(); menu(); };
 
   function load() {
     if (game) game.destroy();
     t = null;
-    try { game = A.create(canvas, { controls, track: setup.track, team: setup.team, quality: setup.gfx === 'auto' ? 'auto' : +setup.gfx, setup: { units: setup.units }, onTelemetry: (tel) => { t = tel; hud(); } }); }
+    try { game = A.create(canvas, { controls, track: setup.track, team: setup.team, quality: setup.gfx === 'auto' ? 'auto' : +setup.gfx, setup: { units: setup.units, engineEra: setup.engineEra }, onTelemetry: (tel) => { t = tel; hud(); } }); }
     catch (e) { $('status').textContent = 'WebGL unavailable: ' + e.message; return; }
     const tr = game.track; let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (let i = 0; i < tr.N; i++) { x0 = Math.min(x0, tr.px[i]); x1 = Math.max(x1, tr.px[i]); z0 = Math.min(z0, tr.pz[i]); z1 = Math.max(z1, tr.pz[i]); }
@@ -239,6 +249,8 @@
   const GFX = { auto: 'AUTO', 2: 'HIGH', 1: 'MEDIUM', 0: 'LOW' };
   function menu() {
     const def = A.trackDef(setup.track), race = setup.mode === 'race', on = (v) => v ? 'ON' : 'OFF';
+    $('engineEra').value = setup.engineEra;
+    $('engineNote').textContent = A.ENGINE_ERAS.find(x => x.id === setup.engineEra).note + ' Sound only; car performance stays the same.';
     const session = [['Circuit', (def.short || def.name.replace(/ (Circuit|Autodrome)$/, '')).toUpperCase() + ' ›', cyc('track', A.TRACKS.map(x => x.id))], ['View', CAMS[setup.camera], cyc('camera', [0, 1, 2])],
       ['Session', race ? 'RACE' : 'TIME TRIAL', cyc('mode', ['tt', 'race'])]];
     if (race) session.push(['Race length', setup.laps + ' LAPS', cyc('laps', [3, 5, 10])], ['AI skill', setup.skill.toUpperCase(), cyc('skill', ['rookie', 'pro', 'elite'])]);

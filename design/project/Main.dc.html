@@ -91,6 +91,8 @@ a{color:#ff8a4c}a:hover{color:#ffb38a}
 <button class="agp-btn" type="button" aria-pressed="{{ g.pressed }}" onClick="{{ g.flip }}" style="min-height: 46px; padding: 4px 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 10px; border: 1px solid {{ g.border }}; background: {{ g.bg }}; color: #f3f4f6; font: 500 13px Inter, sans-serif; cursor: pointer"><span>{{ g.label }}</span><span class="agp-num" style="font-size: 14px; font-weight: 700; color: {{ g.stateColor }}">{{ g.state }}</span></button>
 </sc-for>
 </div>
+<button class="agp-btn" type="button" onClick="{{ nextEngineSound }}" style="min-height: 52px; padding: 8px 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.03); color: #f3f4f6; font: 500 13px Inter, sans-serif; cursor: pointer"><span>Engine sound</span><span class="agp-num" style="font-size: 16px; font-weight: 700; color: {{ accent }}">{{ engineSound }} ›</span></button>
+<div style="font-size: 12px; color: #9aa3ad">{{ engineNote }}</div>
 </div>
 
 </div>
@@ -332,7 +334,7 @@ a{color:#ff8a4c}a:hover{color:#ffb38a}
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { t: null, setup: { compound: 'soft', frontWing: 6, rearWing: 6, brakeBias: 57, tc: true, abs: true, autoGear: true, time: 'afternoon', line: 'full', ghost: true, mode: 'tt', laps: 3, skill: 'pro', track: 'kestrel', camera: 0 }, map: null, error: '' };
+    this.state = { t: null, setup: { compound: 'soft', frontWing: 6, rearWing: 6, brakeBias: 57, tc: true, abs: true, autoGear: true, time: 'afternoon', line: 'full', ghost: true, mode: 'tt', laps: 3, skill: 'pro', track: 'kestrel', camera: 0, engineEra: 'v6' }, map: null, error: '' };
     this.game = null; this.root = null; this.mapOn = false;
     this.toggleMap = () => { this.mapOn = !this.mapOn; if (this.game) this.game.overview(this.mapOn, 0.16); this.forceUpdate ? this.forceUpdate() : this.setState({}); };
     this.setRoot = (el) => { this.root = el; };
@@ -458,6 +460,8 @@ class Component extends DCLogic {
     const race = t.race, isRaceSetup = setup.mode === 'race';
     const modes = [['tt', 'TIME TRIAL'], ['race', 'RACE']].map(([id, label]) => { const on = setup.mode === id; return { label, pick: () => this.setState({ setup: Object.assign({}, setup, { mode: id }) }), pressed: on ? 'true' : 'false', border: on ? accent : 'rgba(255,255,255,0.14)', bg: on ? 'rgba(255,106,26,0.14)' : 'rgba(255,255,255,0.03)' }; });
     const cyc = (k, list) => () => this.setState({ setup: Object.assign({}, setup, { [k]: list[(list.indexOf(setup[k]) + 1) % list.length] }) });
+    const eras = window.ApexGP ? window.ApexGP.ENGINE_ERAS : [{ id: 'v6', label: 'V6 turbo hybrid · 2014–present', note: '' }];
+    const era = eras.find(e => e.id === setup.engineEra) || eras[0];
     const raceOpts = [{ label: 'Race length', state: setup.laps + ' LAPS', flip: cyc('laps', [3, 5, 10]) }, { label: 'AI skill', state: setup.skill.toUpperCase(), flip: cyc('skill', ['rookie', 'pro', 'elite']) }];
     const tr = this.game ? this.game.track : null, def = window.ApexGP ? window.ApexGP.trackDef(setup.track) : { name: '', note: '' };
     const CAM_LABEL = ['CHASE', 'T-CAM', 'COCKPIT'];
@@ -494,6 +498,7 @@ class Component extends DCLogic {
     const hasBest = !!t.bestLap && t.bestLap.charAt(0) !== '-';
     return {
       accent, t, setup, compounds, toggles, aeroNote, compoundNote: notes[setup.compound],
+      engineSound: era.label, engineNote: era.note + ' Sound only; car performance stays the same.', nextEngineSound: cyc('engineEra', eras.map(e => e.id)),
       isMenu: phase === 'menu', isDriving: phase === 'run' || phase === 'lights' || phase === 'paused' || phase === 'finished',
       modes, isRaceSetup, raceOpts, sessionOpts, trackLine, trackNote: def.note + '. On the map: sectors in red, blue and yellow, DRS zones in green. C changes view while driving.', isRace: !!race, tower, mapDots, isFinished: phase === 'finished' && !!race,
       modeLine: (isRaceSetup ? 'RACE · ' + setup.laps + ' LAPS · 6 CARS' : 'TIME TRIAL') + ' · DRY · 26°C',

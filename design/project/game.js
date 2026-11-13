@@ -257,7 +257,7 @@ const COMPOUNDS = {
   hard:   { mu: 1.65, opt: 105, win: 92, wear: 1.2e-8, label: 'HARD' },
   wet:    { mu: 1.36, opt: 62,  win: 62, wear: 2.4e-8, label: 'WET' }, // grooved: the only tyre that works on a wet track
 };
-const DEFAULT_SETUP = { compound: 'soft', frontWing: 6, rearWing: 6, brakeBias: 57, tc: true, abs: true, autoGear: true, ambient: 26, fuel: BASE_FUEL };
+const DEFAULT_SETUP = { compound: 'soft', frontWing: 6, rearWing: 6, brakeBias: 57, tc: true, abs: true, autoGear: true, ambient: 26, fuel: BASE_FUEL, engineEra: 'v6' };
 const REAR_GRIP = 1.12; // rear grip margin over the fronts. At 1.0 the car is neutral at the limit, so any lift, brake or throttle mid-corner spun it; with the margin it pushes wide instead.
 const XW = [CAR.a, CAR.a, -CAR.b, -CAR.b], YW = [CAR.tw / 2, -CAR.tw / 2, CAR.tw / 2, -CAR.tw / 2];
 
@@ -753,25 +753,43 @@ function ribbon(tr, inner, outer, y, uvLen, include, yTop) {
   return g;
 }
 
+// shortcut: these are synthesized era impressions; use licensed multi-RPM recordings for car-specific fidelity.
+const ENGINE_ERAS = [
+  { id: 'v6', label: 'V6 turbo hybrid · 2014–present', note: 'Deep exhaust, turbo whistle and electric whine.', cylinders: 6, idle: 3800, redline: 12500, cutoff: 4200, bank: 0.38, intake: 0.18, drive: 2.1, turbo: true, harmonics: [0, 1, 0.62, 0.32, 0.21, 0.12, 0.08, 0.035, 0.025] },
+  { id: 'v8', label: 'V8 · 2006–2013', note: 'Hard-edged rasp rising to an 18,000 rpm scream.', cylinders: 8, idle: 4000, redline: 18000, cutoff: 7200, bank: 0.28, intake: 0.26, drive: 2.4, turbo: false, harmonics: [0, 1, 0.5, 0.36, 0.24, 0.18, 0.12, 0.09, 0.05, 0.03] },
+  { id: 'v10', label: 'V10 · late 1990s–2005', note: 'Bright, piercing induction howl up to 19,000 rpm.', cylinders: 10, idle: 4000, redline: 19000, cutoff: 9000, bank: 0.18, intake: 0.22, drive: 1.8, turbo: false, harmonics: [0, 1, 0.78, 0.31, 0.26, 0.12, 0.11, 0.045, 0.03] },
+  { id: 'v12', label: 'V12 · early 1990s', note: 'Full, smooth twelve-cylinder howl up to 15,500 rpm.', cylinders: 12, idle: 3500, redline: 15500, cutoff: 7800, bank: 0.32, intake: 0.24, drive: 1.6, turbo: false, harmonics: [0, 1, 0.3, 0.44, 0.16, 0.11, 0.06, 0.04, 0.02] },
+];
+
 class Audio {
-  init() {
-    const A = window.AudioContext || window.webkitAudioContext; if (!A) return;
-    const ac = this.ac = new A();
-    this.master = ac.createGain(); this.master.gain.value = 0.5; this.master.connect(ac.destination);
+  init(context) {
+    const A = window.AudioContext || window.webkitAudioContext; if (!context && !A) return;
+    const ac = this.ac = context || new A();
+    this.master = ac.createGain(); this.master.gain.value = 0;
+    const compressor = ac.createDynamicsCompressor(); compressor.threshold.value = -12; compressor.knee.value = 12;
+    compressor.ratio.value = 4; compressor.attack.value = 0.003; compressor.release.value = 0.12;
+    this.master.connect(compressor); compressor.connect(ac.destination);
     const buf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     const noiseSrc = () => { const s = ac.createBufferSource(); s.buffer = buf; s.loop = true; s.start(); return s; };
-    // engine: V6 firing harmonics through a soft clipper
+    // Exhaust pulses and the lower bank order replace the generic saw/square buzz.
     this.eg = ac.createGain(); this.eg.gain.value = 0;
-    const shaper = ac.createWaveShaper(), curve = new Float32Array(1024);
-    for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(2.2 * x); }
-    shaper.curve = curve;
-    this.lp = ac.createBiquadFilter(); this.lp.type = 'lowpass'; this.lp.Q.value = 1.2;
-    this.oscs = [[1, 'sawtooth', 0.5], [0.5, 'sawtooth', 0.35], [2, 'square', 0.12], [1.5, 'triangle', 0.15]].map(([mul, type, g]) => {
-      const o = ac.createOscillator(); o.type = type; const gg = ac.createGain(); gg.gain.value = g;
-      o.connect(gg); gg.connect(shaper); o.start(); return [o, mul];
+    const shaper = this.shaper = ac.createWaveShaper(); shaper.oversample = '2x';
+    this.voices = ENGINE_ERAS.map(era => {
+      const curve = new Float32Array(1024);
+      for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(era.drive * (i / (curve.length - 1) * 2 - 1));
+      return { wave: ac.createPeriodicWave(new Float32Array(era.harmonics.length), new Float32Array(era.harmonics)), curve };
+    });
+    const bankWave = ac.createPeriodicWave(new Float32Array(8), new Float32Array([0, 1, 0.14, 0.36, 0.05, 0.15, 0.03, 0.07]));
+    this.lp = ac.createBiquadFilter(); this.lp.type = 'lowpass'; this.lp.Q.value = 0.7;
+    this.oscs = [[1, 0.7], [0.5, 0.3]].map(([mul, g]) => {
+      const o = ac.createOscillator(), gg = ac.createGain(); gg.gain.value = g; o.setPeriodicWave(bankWave);
+      o.connect(gg); gg.connect(shaper); o.start(); return [o, mul, gg];
     });
     shaper.connect(this.lp); this.lp.connect(this.eg); this.eg.connect(this.master);
+    this.intakeF = ac.createBiquadFilter(); this.intakeF.type = 'bandpass'; this.intakeF.Q.value = 0.65;
+    this.intakeG = ac.createGain(); this.intakeG.gain.value = 0;
+    noiseSrc().connect(this.intakeF); this.intakeF.connect(this.intakeG); this.intakeG.connect(shaper);
     const turbo = ac.createOscillator(); turbo.type = 'sine'; this.turbo = turbo; this.tg = ac.createGain(); this.tg.gain.value = 0;
     turbo.connect(this.tg); this.tg.connect(this.master); turbo.start();
     const mk = (type, f, q) => { const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q; const g = ac.createGain(); g.gain.value = 0; noiseSrc().connect(fl); fl.connect(g); g.connect(this.master); return g; };
@@ -781,20 +799,31 @@ class Audio {
     // ERS: a motor whine that climbs with road speed while deploying and falls away while harvesting
     this.ersO = ac.createOscillator(); this.ersO.type = 'triangle'; this.ersG = ac.createGain(); this.ersG.gain.value = 0;
     this.ersO.connect(this.ersG); this.ersG.connect(this.master); this.ersO.start();
-    // the nearest rival: a second, simpler engine voice, doppler-shifted and panned
+    // The nearest rival shares the selected exhaust voice, doppler-shifted and panned.
     this.oppG = ac.createGain(); this.oppG.gain.value = 0;
-    const olp = ac.createBiquadFilter(); olp.type = 'lowpass'; olp.frequency.value = 2600;
-    this.oppO = [[1, 0.5], [0.5, 0.4], [1.5, 0.2]].map(([mul, g]) => { const o = ac.createOscillator(); o.type = 'sawtooth'; const gg = ac.createGain(); gg.gain.value = g; o.connect(gg); gg.connect(olp); o.start(); return [o, mul]; });
+    const olp = this.oppLP = ac.createBiquadFilter(); olp.type = 'lowpass'; olp.Q.value = 0.7;
+    this.oppO = [[1, 0.7], [0.5, 0.25]].map(([mul, g]) => { const o = ac.createOscillator(); o.setPeriodicWave(bankWave); const gg = ac.createGain(); gg.gain.value = g; o.connect(gg); gg.connect(olp); o.start(); return [o, mul]; });
     olp.connect(this.oppG);
     this.oppPan = ac.createStereoPanner ? ac.createStereoPanner() : null;
     if (this.oppPan) { this.oppG.connect(this.oppPan); this.oppPan.connect(this.master); } else this.oppG.connect(this.master);
-    this.lastGear = 1; this.blipT = 0;
+    this.lastGear = 1; this.blipT = 0; this.active = false;
   }
   resume() { if (!this.ac) this.init(); if (this.ac && this.ac.state !== 'running') this.ac.resume(); }
   update(sim, on, near, inside) { // inside: heard from in the helmet (cockpit view). near: the closest other car { rpm, dist, closing (m/s towards the listener), pan }
     if (!this.ac) return;
-    const t = this.ac.currentTime, set = (p, v, k = 0.04) => p.setTargetAtTime(v, t, k);
-    if (!on) { set(this.master.gain, 0, 0.1); return; }
+    const t = this.ac.currentTime, dt = clamp(t - (this.lastTime === undefined ? t : this.lastTime), 0, 0.1), set = (p, v, k = 0.04) => p.setTargetAtTime(v, t, k);
+    this.lastTime = t;
+    const era = ENGINE_ERAS.find(e => e.id === sim.setup.engineEra) || ENGINE_ERAS[0];
+    if (this.era !== era) {
+      const voice = this.voices[ENGINE_ERAS.indexOf(era)];
+      this.oscs[0][0].setPeriodicWave(voice.wave); this.oppO[0][0].setPeriodicWave(voice.wave); this.shaper.curve = voice.curve;
+      this.oscs[1][2].gain.value = era.bank; this.era = era;
+    }
+    if (!on) { set(this.master.gain, 0, 0.1); this.active = false; return; }
+    if (!this.active) {
+      this.lastGear = sim.gear; this.blipT = 0; this.active = true;
+      this.pop.gain.cancelScheduledValues(t); this.pop.gain.setValueAtTime(0, t);
+    }
     set(this.master.gain, this.muted ? 0 : 0.5, 0.1);
     // gear changes: a crack on every shift, and on downshifts a 120 ms throttle blip
     if (sim.gear !== this.lastGear) {
@@ -802,23 +831,28 @@ class Audio {
       g.cancelScheduledValues(t); g.setValueAtTime(down ? 0.45 : 0.25, t); g.setTargetAtTime(0, t, down ? 0.045 : 0.016);
       if (down) this.blipT = t + 0.12;
       this.lastGear = sim.gear;
-    } else if (sim.thr < 0.05 && sim.rpm > 8000 && Math.random() < 0.1) { // overrun crackle off the throttle
-      const g = this.pop.gain; g.cancelScheduledValues(t); g.setValueAtTime(0.06 + Math.random() * 0.14, t); g.setTargetAtTime(0, t, 0.02);
+    } else if (sim.thr < 0.05 && sim.rpm > 8000 && Math.random() < 1 - Math.exp(-dt * (era.turbo ? 3 : 8))) {
+      const g = this.pop.gain; g.cancelScheduledValues(t); g.setValueAtTime(0.04 + Math.random() * 0.1, t); g.setTargetAtTime(0, t, 0.02);
     }
-    const blip = t < this.blipT, thr = Math.max(sim.thr, blip ? 0.8 : 0), f = sim.rpm / 60 * 3 * (blip ? 1.07 : 1);
+    // Map the same drivetrain rev fraction onto each era's audible rev range; handling stays identical.
+    const soundRpm = rpm => era.idle + clamp((rpm - CAR.idle) / (CAR.limiter - CAR.idle), 0, 1.08) * (era.redline - era.idle);
+    const blip = t < this.blipT, thr = Math.max(sim.thr, blip ? 0.8 : 0), rpm = soundRpm(sim.rpm), f = rpm / 60 * era.cylinders / 2 * (blip ? 1.07 : 1);
     for (const [o, mul] of this.oscs) set(o.frequency, f * mul, 0.015);
-    set(this.lp.frequency, (700 + thr * 4200 + sim.rpm * 0.15) * (inside ? 0.7 : 1), 0.03); // the engine is behind you and the helmet takes the top off it
-    set(this.eg.gain, (sim.shiftT > 0 && !blip ? 0.05 : 0.12 + 0.22 * thr) * (sim.rpm > CAR.limiter ? 0.6 : 1), 0.012);
+    set(this.lp.frequency, (900 + thr * era.cutoff + rpm * 0.1) * (inside ? 0.7 : 1), 0.03);
+    set(this.intakeF.frequency, 650 + f * 1.6, 0.04); set(this.intakeG.gain, era.intake * thr * thr, 0.025);
+    const cut = sim.rpm >= CAR.limiter && Math.floor(t * 38) % 2 === 0;
+    set(this.eg.gain, (sim.shiftT > 0 && !blip ? 0.045 : 0.14 + 0.24 * thr) * (cut ? 0.25 : 1), 0.008);
     const deploy = sim.thr > 0.85 && sim.ers > 0 && sim.gear >= 2 && sim.speed > 8, harvest = sim.brk > 0.05 && sim.speed > 5;
     set(this.ersO.frequency, 700 + sim.speed * (deploy ? 42 : 30), 0.06);
-    set(this.ersG.gain, deploy ? (sim.overtake ? 0.03 : 0.018) : harvest ? 0.022 * sim.brk : 0, 0.06);
+    set(this.ersG.gain, era.turbo ? (deploy ? (sim.overtake ? 0.03 : 0.018) : harvest ? 0.022 * sim.brk : 0) : 0, 0.06);
     if (near) {
-      const fo = near.rpm / 60 * 3 * (1 + clamp(near.closing, -90, 90) / 343); // doppler: higher coming at you, lower going away
+      const fo = soundRpm(near.rpm) / 60 * era.cylinders / 2 * (1 + clamp(near.closing, -90, 90) / 343);
       for (const [o, mul] of this.oppO) set(o.frequency, fo * mul, 0.03);
+      set(this.oppLP.frequency, (1200 + era.cutoff * 0.7) / (1 + near.dist / 100), 0.05);
       set(this.oppG.gain, 0.2 / (1 + (near.dist / 14) ** 2), 0.05);
       if (this.oppPan) set(this.oppPan.pan, near.pan, 0.05);
     } else set(this.oppG.gain, 0, 0.1);
-    set(this.turbo.frequency, 1800 + sim.rpm * 0.32, 0.05); set(this.tg.gain, 0.012 * thr * sim.rpm / 12000, 0.08);
+    set(this.turbo.frequency, 1800 + rpm * 0.32, 0.05); set(this.tg.gain, era.turbo ? 0.012 * thr * rpm / 12500 : 0, 0.08);
     const v = sim.speed, surf = sim.surf;
     set(this.squeal.gain, sim.speed > 6 ? clamp((sim.slipMax - 0.85) * 0.25, 0, 0.18) : 0, 0.05);
     set(this.wind.gain, Math.min(0.35, v * v / 9000 * 0.4) * (inside ? 1.5 : 1), 0.1);
@@ -1967,6 +2001,7 @@ function create(canvas, opts = {}) {
     },
     begin(setup) {
       audio.resume();
+      audio.active = false;
       Object.assign(sim.setup, setup || {});
       state.wet = !!(setup && setup.wet); sim.setup.wet = state.wet; // rain: wet tyres go on automatically
       if (state.wet) sim.setup.compound = 'wet'; else if (sim.setup.compound === 'wet') sim.setup.compound = 'soft';
@@ -2003,7 +2038,7 @@ function create(canvas, opts = {}) {
   };
 }
 
-const api = { TUNE, create, buildTrack, TRACKS, TEAMS, teamDef, trackDef, speedProfile, Sim, Race, collide, autopilot, ghostPose, REC_DS, fmtTime, CIRCUIT, CAR, COMPOUNDS, DEFAULT_SETUP, surfaceAt, surfaceRipple };
+const api = { TUNE, create, buildTrack, TRACKS, TEAMS, teamDef, trackDef, speedProfile, Sim, Race, collide, autopilot, ghostPose, REC_DS, fmtTime, CIRCUIT, CAR, COMPOUNDS, DEFAULT_SETUP, surfaceAt, surfaceRipple, ENGINE_ERAS, EngineAudio: Audio };
 root.ApexGP = api;
 if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

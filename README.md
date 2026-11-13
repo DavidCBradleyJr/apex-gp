@@ -14,6 +14,10 @@ A browser F1 sim (time trial and short races) on three made-up circuits: Kestrel
 - `src/play.html` is a bare local test page. Run `python3 -m http.server` in this folder, open `/src/play.html` (add `?track=virel` or `?track=callow`), and press Enter to start.
 - `test/sim-test.js` is the physics check. Run `node test/sim-test.js`: an autopilot drives 3 laps, and the test asserts that lap time, speed and g-loads are plausible, that the car does not spin with assists on, and that every circuit laps cleanly. `node test/race-test.js` checks races.
 
+**Engine sound:** choose **Car setup → Engine sound** for a modern V6 turbo hybrid (2014–present), V8 (2006–2013), V10 (late 1990s–2005), or early-1990s V12. The standalone page remembers the choice across visits and circuit changes; the canvas has a cycling button. Each voice has its own firing harmonics, audible rev range, exhaust tone and intake texture. Turbo and electric whine accompany the V6; shifts, overrun crackle, helmet filtering and nearby rivals follow the selected sound. This changes audio only, with identical performance and gearing. These are synthesized era impressions, not recordings of specific cars.
+
+Audio check: serve the project root and open `/test/engine-audio-test.html`. It renders all four voices through real `OfflineAudioContext`, checks output levels, throttle/helmet dynamics, Doppler, turbo/ERS gating, shifts, mute/pause and saved menu settings. The settings portion stubs WebGL and rig hardware; it sends no wheel forces.
+
 Canvas: https://claude.ai/artifact/38LXq1g63zdz5hrGHHrHb5
 
 ## Sim rigs: Linux and Windows
