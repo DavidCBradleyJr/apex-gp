@@ -178,6 +178,91 @@
           ]
         },
         {
+          "reportId": 3,
+          "items": [
+            {
+              "reportSize": 8,
+              "reportCount": 1,
+              "logicalMinimum": 1,
+              "logicalMaximum": 10,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983074
+              ]
+            },
+            {
+              "reportSize": 4,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 3,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983075
+              ]
+            },
+            {
+              "reportSize": 2,
+              "reportCount": 2,
+              "logicalMinimum": 0,
+              "logicalMaximum": 3,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                655361,
+                655362
+              ]
+            },
+            {
+              "reportSize": 16,
+              "reportCount": 1,
+              "logicalMinimum": -32768,
+              "logicalMaximum": 32767,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983136
+              ]
+            },
+            {
+              "reportSize": 16,
+              "reportCount": 2,
+              "logicalMinimum": -32768,
+              "logicalMaximum": 32767,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983137,
+                983138
+              ]
+            },
+            {
+              "reportSize": 16,
+              "reportCount": 2,
+              "logicalMinimum": 0,
+              "logicalMaximum": 32767,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983139,
+                983140
+              ]
+            },
+            {
+              "reportSize": 16,
+              "reportCount": 1,
+              "logicalMinimum": 0,
+              "logicalMaximum": 32767,
+              "isConstant": false,
+              "isArray": false,
+              "usages": [
+                983141
+              ]
+            }
+          ]
+        },
+        {
           "reportId": 5,
           "items": [
             {

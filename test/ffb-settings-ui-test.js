@@ -1,20 +1,25 @@
 // Run with browser_run_code_unsafe and a project-root static server on :8767. DOM-only, fake bridge, no WebGL/HID.
 async (page) => {
   const context=await page.context().browser().newContext({viewport:{width:440,height:1000}}),test=await context.newPage();test.setDefaultTimeout(10000);
-  const device={key:'r3',id:1,name:'Gudsen R3 Racing Wheel and Pedals',axes:[0,-1,-1,-1,-1,-1],buttons:[0],ffb:true};
+  const device={key:'r3',id:1,name:'Gudsen R3 Racing Wheel and Pedals',axes:[0,-1,-1,-1,-1,-1],buttons:[0],ffb:true,damping:true,friction:true};
   const profile={steer:{device:'r3',axis:0,left:-1,center:0,right:1},throttle:{device:'r3',axis:2,rest:-1,full:1},brake:{device:'r3',axis:5,rest:-1,full:1}};
   const check=(ok,message)=>{if(!ok)throw Error(message);};
   try{
     const html=await(await test.request.get('http://127.0.0.1:8767/docs/index.html')).text(),css=html.match(/<style>([\s\S]*?)<\/style>/)[1];
     await context.addInitScript(profile=>{if(!localStorage.getItem('apexgp.rig.v1'))localStorage.setItem('apexgp.rig.v1',JSON.stringify(profile));},profile);
-    await test.route('**/api/rig',r=>r.fulfill({json:{devices:[device],error:'',maxForce:0.2}}));
+    let legacy=false;
+    await test.route('**/api/rig',r=>r.fulfill({json:{devices:[device],error:'',maxForce:legacy?0.2:1,feedbackVersion:legacy?undefined:2}}));
     await test.route('**/ffb-settings-test',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><html><head><meta charset="utf-8"><style>'+css+'\nbody {overflow:auto} #rigControls {box-sizing:border-box;width:calc(100% - 32px);max-width:380px;margin:16px auto} #rigControls > label progress {width:100%}</style></head><body><div id="rigControls" class="panel"></div><script src="/docs/webhid-ffb.js"></script><script src="/docs/rig.js"></script><script>window.controls=new ApexRig.RigControls();controls.mount(document.getElementById("rigControls"));</script></body></html>'}));
     await test.goto('http://127.0.0.1:8767/ffb-settings-test',{waitUntil:'domcontentloaded'});
     await test.waitForFunction(()=>controls.bridge,null,{timeout:10000});
     const strength=test.getByRole('slider',{name:/^FFB strength/}),road=test.getByRole('slider',{name:/^Road texture/});
+    const limit=test.getByRole('slider',{name:/^Maximum FFB output/}),gain=test.getByRole('slider',{name:/^Steering gain/}),damping=test.getByRole('slider',{name:/^Damping/}),friction=test.getByRole('slider',{name:/^Friction/}),smoothing=test.getByRole('slider',{name:/^Road smoothing/});
     check(await strength.getAttribute('max')==='100','strength range');
     check(await strength.evaluate(el=>el.value)==='60','stronger default strength');
     check(await road.evaluate(el=>el.value)==='60','default road texture');
+    check(await limit.inputValue()==='20','old default output limit must be preserved');
+    check(await gain.inputValue()==='100'&&await damping.inputValue()==='0'&&await friction.inputValue()==='0','new effects must not change old feel by default');
+    check(await damping.isEnabled()&&await friction.isEnabled(),'advertised conditions unavailable');
     await strength.fill('70');await road.fill('90');
     const stored=await test.evaluate(()=>JSON.parse(localStorage.getItem('apexgp.rig.v1')));
     check(stored.feedback.strength===0.7&&stored.feedback.roadFeel===0.9,'tuning was not saved');
@@ -26,17 +31,34 @@ async (page) => {
     await test.screenshot({path:'/tmp/apex-road-feedback-settings.png'});
     await road.fill('0');await test.evaluate(()=>controls.feedback({aligningTorque:406,roadFeedback:0.4,speed:40,surf:['kerb','asphalt']},true));
     await test.waitForFunction(()=>document.querySelector('progress[aria-label="FFB output request"]').value<8,null,{timeout:10000});
+    await limit.fill('60');
+    check(await test.evaluate(()=>!controls.ffb&&controls.force===0),'changing maximum output must disarm');
+    await gain.fill('200');await damping.fill('15');await friction.fill('5');await smoothing.fill('5');
+    await test.getByRole('button',{name:'Steering FFB: OFF',exact:true}).click();
+    await test.evaluate(()=>controls.feedback({aligningTorque:1000,roadFeedback:0,speed:40},true));
+    await test.getByText('Signal clipping — reduce steering gain or road texture.',{exact:true}).waitFor();
+    check(await test.evaluate(()=>{const s=controls.feedbackSettings();return s.outputLimit===.6&&s.damping===.15*.7&&s.friction===.05*.7;}),'advanced settings not routed');
+    await gain.fill('100');await test.evaluate(()=>controls.feedback({aligningTorque:406,roadFeedback:0,speed:40},true));
+    await test.getByText('Signal within range',{exact:true}).waitFor();
     await road.fill('90');await test.getByRole('checkbox',{name:'Reverse FFB direction',exact:true}).check();
     check(await test.evaluate(()=>!controls.ffb&&controls.force===0),'changing direction must disarm FFB');
     await test.getByRole('button',{name:'Start input walkthrough',exact:true}).click();
     await test.evaluate(()=>{const {steer,throttle,brake}=controls.profile;controls.wizard.draft={steer,throttle,brake};controls.wizard.go(16,controls.allDevices());});
     await test.getByRole('dialog').getByRole('button',{name:'Save rig setup',exact:true}).click();
     check(await test.evaluate(()=>controls.profile.feedback.strength===0.7&&controls.profile.feedback.roadFeel===0.9),'wizard lost tuning');
+    check(await test.evaluate(()=>controls.profile.feedback.outputLimit===.6&&controls.profile.feedback.damping===.15&&controls.profile.feedback.friction===.05&&controls.profile.feedback.smoothing===5),'wizard lost advanced tuning');
     await test.reload({waitUntil:'domcontentloaded'});
     check(await strength.evaluate(el=>el.value)==='70'&&await road.evaluate(el=>el.value)==='90','reload lost tuning');
     check(await test.getByRole('checkbox',{name:'Reverse FFB direction',exact:true}).isChecked(),'reload lost direction');
     check(await test.evaluate(()=>!controls.ffb),'reload armed force without user input');
+    check(await limit.inputValue()==='60'&&await damping.inputValue()==='15'&&await friction.inputValue()==='5'&&await smoothing.inputValue()==='5','reload lost advanced tuning');
     check(await test.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'settings overflow narrow screen');
-    return 'PASS: stronger defaults, road texture slider, requested-force meter, surface display, disarm, wizard preservation, save/reload and narrow layout; no WebGL or physical HID';
+    await test.getByRole('button',{name:'Clear wheel calibration',exact:true}).click();
+    check(await test.evaluate(()=>controls.profile.feedback.outputLimit===.6&&!controls.profile.steer),'clear calibration lost tuning');
+    legacy=true;await test.reload({waitUntil:'domcontentloaded'});await test.waitForFunction(()=>controls.bridge);
+    await test.getByText('Restart the local bridge to use adjustable output, damping and friction.',{exact:true}).waitFor();
+    check(await damping.isDisabled()&&await friction.isDisabled(),'legacy bridge must not advertise conditions');
+    check(await test.evaluate(()=>controls.feedbackSettings().outputLimit===.2),'legacy bridge must retain old limit');
+    return 'PASS: unchanged defaults, output/gain/damping/friction/smoothing controls, clipping, meter, disarm, wizard/clear/reload preservation, legacy bridge and narrow layout; no WebGL or physical HID';
   }finally{await context.close();}
 }

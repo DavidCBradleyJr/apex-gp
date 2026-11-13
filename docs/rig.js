@@ -1,7 +1,7 @@
 /* Wheel calibration and optional localhost SDL2 transport. No controller layouts are guessed. */
 (function (root) {
 'use strict';
-const { MozaHidFfb, MAX_FORCE } = typeof module !== 'undefined' ? require('./webhid-ffb.js') : root.ApexHID;
+const { MozaHidFfb, MAX_FORCE, forceLevels } = typeof module !== 'undefined' ? require('./webhid-ffb.js') : root.ApexHID;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const axis = (binding, devices) => {
   if (!binding) return null;
@@ -21,11 +21,12 @@ function normalize(binding, value, steering = false) {
   const v = (value - binding.center) / (right ? binding.right - binding.center : binding.center - binding.left);
   return Math.abs(v) < 0.005 ? 0 : clamp(v, -1, 1);
 }
-function feedbackForce(sim, roadFeel = 0.6) {
+function feedbackSignal(sim, roadFeel = 0.6, gain = 1) {
   const aligning = Number.isFinite(sim.aligningTorque) ? Math.tanh(sim.aligningTorque / 700) : 0;
   const texture = Number.isFinite(sim.roadFeedback) ? sim.roadFeedback * clamp(Math.abs(sim.speed || 0) / 3, 0, 1) : 0;
-  return clamp(aligning + texture * roadFeel, -1, 1);
+  return aligning * gain + texture * roadFeel;
 }
+function feedbackForce(sim, roadFeel = 0.6, gain = 1) { return clamp(feedbackSignal(sim, roadFeel, gain), -1, 1); }
 function mappedInput(profile, devices) {
   if (!profile || !valid(profile.steer, true) || !valid(profile.throttle) || !valid(profile.brake)) return null;
   const raw = ['steer', 'throttle', 'brake'].map(k => axis(profile[k], devices));
@@ -134,6 +135,7 @@ class RigWizard {
 class RigControls {
   constructor() {
     this.devices = []; this.profile = {}; this.enabled = true; this.ffb = false; this.strength = 0.6; this.roadFeel = 0.6; this.invert = false;
+    this.outputLimit=MAX_FORCE; this.gain=1; this.damping=0; this.friction=0; this.smoothing=1000/(2*Math.PI*12); this.clipped=false; this.bridgeAdvanced=false;
     this.bridge = false; this.updated = 0; this.feedbackAt = 0; this.prev = {}; this.force = 0; this.active = false; this.error = '';
     this.suspended = false;
     this.hid = new MozaHidFfb(error => { this.error = error; this.stop(); });
@@ -141,6 +143,9 @@ class RigControls {
     const tuning = this.profile.feedback || {};
     if (Number.isFinite(tuning.strength)) this.strength = clamp(tuning.strength, 0, 1);
     if (Number.isFinite(tuning.roadFeel)) this.roadFeel = clamp(tuning.roadFeel, 0, 1);
+    for (const [key,max] of [['outputLimit',1],['gain',3],['damping',1],['friction',1],['smoothing',50]]) {
+      if (Number.isFinite(tuning[key])) this[key]=clamp(tuning[key],0,max);
+    }
     this.invert = tuning.invert === true;
     this.block = () => { this.suspended = true; this.stop(); };
     this.focus = () => { if (!document.hidden) this.suspended = false; };
@@ -166,12 +171,12 @@ class RigControls {
     const timeout = setTimeout(() => abort.abort(), 1000);
     try {
       const response = await fetch('/api/rig', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device: this.target, force: this.bridge ? this.force : 0, active: this.bridge && this.active && !this.suspended && performance.now() - this.feedbackAt < 100 }), signal: abort.signal });
+        body: JSON.stringify({ device: this.target, force: this.bridge ? this.force : 0, ...this.feedbackSettings(), active: this.bridge && this.active && !this.suspended && performance.now() - this.feedbackAt < 100 }), signal: abort.signal });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Bridge: ' + response.status);
       if (!Array.isArray(data.devices)) throw new Error('Wheel bridge not running');
       if (!this.bridge && this.hid.ready) { this.stop(); await this.hid.disconnect(); }
-      this.devices = data.devices; this.error = data.error || ''; this.updated = performance.now(); this.bridge = true;
+      this.devices = data.devices; this.error = data.error || ''; this.updated = performance.now(); this.bridge = true; this.bridgeAdvanced=data.feedbackVersion===2;
     } catch (e) {
       if (this.bridge) this.stop();
       this.devices = []; this.bridge = false;
@@ -196,18 +201,28 @@ class RigControls {
     return input;
   }
   ffbAvailable(wheel, devices = this.allDevices()) { return this.bridge ? !!wheel?.ffb : this.hid.matches(wheel, devices); }
+  conditionAvailable(name) {
+    const devices=this.allDevices(), wheel=devices.find(d=>this.profile.steer && d.key===this.profile.steer.device);
+    return this.bridge ? !!(this.bridgeAdvanced && wheel?.ffb && wheel[name]) : this.hid.matches(wheel,devices) && this.hid.conditions;
+  }
+  feedbackSettings() {
+    return {outputLimit:this.bridge&&!this.bridgeAdvanced?Math.min(MAX_FORCE,this.outputLimit):this.outputLimit,
+      damping:this.conditionAvailable('damping')?this.damping*this.strength:0, friction:this.conditionAvailable('friction')?this.friction*this.strength:0};
+  }
   feedback(sim, active) {
     this.feedbackAt = performance.now();
     this.surface = sim.surf ? [...new Set(sim.surf.slice(0, 2))].join(' / ') : '';
     const d = this.allDevices().find(d => this.profile.steer && d.key === this.profile.steer.device);
     this.active = !!(active && !this.wizard && this.enabled && this.ffb && this.ffbAvailable(d) && !this.suspended);
     this.target = d ? d.id : null;
+    sim.roadSmoothing=this.smoothing;
     // Aligning torque comes from the front tyres; grip loss lightens the wheel. Never substitute rumble.
-    const force = feedbackForce(sim, this.roadFeel);
-    this.force = this.active ? clamp(force, -1, 1) * this.strength * (this.invert ? -1 : 1) : 0;
-    if (!this.bridge) { if (this.active) this.hid.write(this.force); else this.hid.stop(); }
+    const signal = feedbackSignal(sim, this.roadFeel, this.gain);
+    this.clipped=this.active && Math.abs(signal)>=1;
+    this.force = this.active ? clamp(signal, -1, 1) * this.strength * (this.invert ? -1 : 1) : 0;
+    if (!this.bridge) { if (this.active) this.hid.write(this.force,this.feedbackSettings()); else this.hid.stop(); }
   }
-  stop() { this.force = 0; this.active = false; this.ffb = false; this.hid.stop(); }
+  stop() { this.force = 0; this.clipped=false; this.active = false; this.ffb = false; this.hid.stop(); }
   save() {
     try { localStorage.setItem('apexgp.rig.v1', JSON.stringify(this.profile)); return true; }
     catch (_) { this.error = 'Calibration works this session, but browser storage is unavailable.'; return false; }
@@ -331,19 +346,37 @@ class RigControls {
     };
     make('p', 'Direct browser FFB: Moza R3 on desktop Chrome/Edge. Choose the wheel in the browser prompt, then explicitly enable Steering FFB. Other wheelbases can use the local bridge.');
     const ffb = make('button', 'Steering FFB: OFF'); ffb.type = 'button'; ffb.className = 'opt';
-    ffb.onclick = () => { this.ffb = !this.ffb; ffb.textContent = 'Steering FFB: ' + (this.ffb ? 'ON' : 'OFF'); };
-    const strengthLabel = make('label', 'FFB strength (maximum 20% of base output)'), strength = make('input', '', strengthLabel);
-    const saveFeedback = () => { this.profile.feedback = { strength: this.strength, roadFeel: this.roadFeel, invert: this.invert }; this.save(); };
+    ffb.onclick = () => { if(this.ffb)this.stop(); else this.ffb=true; ffb.textContent = 'Steering FFB: ' + (this.ffb ? 'ON' : 'OFF'); };
+    const saveFeedback = () => {
+      this.profile.feedback=Object.fromEntries(['strength','roadFeel','invert','outputLimit','gain','damping','friction','smoothing'].map(key=>[key,this[key]])); this.save();
+    };
+    const slider=(key,label,max,scale,unit,help)=>{
+      const box=make('div'), labelEl=make('label',label,box), input=make('input','',labelEl), value=make('output','',box);
+      input.type='range'; input.min='0'; input.max=String(max); input.value=String(Math.round(this[key]*scale));
+      const describe=()=>{value.textContent=Math.round(this[key]*scale)+unit;}; describe();
+      input.oninput=()=>{this[key]=+input.value/scale; if(key==='outputLimit')this.stop(); describe(); saveFeedback();};
+      const hint=make('p',help,box); hint.id='rig-'+key+'-help'; input.setAttribute('aria-describedby',hint.id);
+      return input;
+    };
+    slider('outputLimit','Maximum FFB output',100,100,'% of base output','Starts at the previous 20% limit. Increasing this can make the wheel much stronger and disarms FFB. All effects share this limit.');
+    const strengthLabel = make('label', 'FFB strength'), strength = make('input', '', strengthLabel);
     strength.type = 'range'; strength.min = '0'; strength.max = '100'; strength.value = String(Math.round(this.strength * 100));
     const strengthValue = make('output', strength.value + '%', strengthLabel);
     strength.oninput = () => { this.strength = +strength.value / 100; strengthValue.textContent = strength.value + '%'; saveFeedback(); };
+    slider('gain','Steering gain',300,100,'%','Raises cornering load independently of road texture. Reduce it if the signal clips.');
     const roadLabel = make('label', 'Road texture'), road = make('input', '', roadLabel);
     road.type = 'range'; road.min = '0'; road.max = '100'; road.value = String(Math.round(this.roadFeel * 100));
     const roadValue = make('output', road.value + '%', roadLabel);
     road.oninput = () => { this.roadFeel = +road.value / 100; roadValue.textContent = road.value + '%'; saveFeedback(); };
+    slider('smoothing','Road smoothing',50,1,' ms','0 is sharpest. Higher values soften road detail; start near 13 ms. Low values may buzz when frame rate drops.');
+    const damping=slider('damping','Damping',100,100,'%','Resists fast wheel movement. Add small amounts to calm oscillation; too much hides detail.');
+    const friction=slider('friction','Friction',100,100,'%','Adds resistance during wheel movement. Keep low to preserve small steering cues.');
+    const conditionStatus=make('p'); conditionStatus.setAttribute('role','status');
     const forceMeterLabel = make('label', 'FFB output request'), forceMeter = make('progress', '', forceMeterLabel);
-    forceMeter.max = MAX_FORCE * 100; forceMeter.value = 0; forceMeter.setAttribute('aria-label', 'FFB output request');
+    forceMeter.max = 100; forceMeter.value = 0; forceMeter.setAttribute('aria-label', 'FFB output request');
     const forceValue = make('output', '0.0% of base output', forceMeterLabel);
+    const clipping=make('p'); clipping.setAttribute('role','status');
+    make('p','The meter shows steering torque requested, not measured torque. Damping and friction depend on wheel movement; their combined ceiling is shown separately.');
     make('p', 'Road texture follows the front tyres: subtle asphalt grain, rhythmic kerbs and rough loose surfaces. This is procedural surface feedback, not scanned pavement.');
     const invertLabel = make('label', 'Reverse FFB direction'), invert = make('input', '', invertLabel); invert.type = 'checkbox'; invert.checked = this.invert;
     invert.onchange = () => { this.invert = invert.checked; this.stop(); saveFeedback(); };
@@ -366,9 +399,15 @@ class RigControls {
         }
       }
       monitor(this.profile, devices);
-      const requested = Math.abs(this.force) * MAX_FORCE * 100;
+      const settings=this.feedbackSettings(), levels=forceLevels(this.force,settings);
+      const requested = this.active?Math.abs(levels.constant)*100:0;
       forceMeter.value = requested;
-      forceValue.textContent = requested.toFixed(1) + '% of base output' + (this.surface ? ' · ' + this.surface : '');
+      const ceiling=this.active?(Math.abs(levels.constant)+levels.damper+levels.friction)*100:0;
+      forceValue.textContent = requested.toFixed(1) + '% of base output · all effects ≤ '+ceiling.toFixed(1)+'%' + (this.surface ? ' · ' + this.surface : '');
+      clipping.textContent=this.clipped?'Signal clipping — reduce steering gain or road texture.':'Signal within range';
+      damping.disabled=!!this.wizard || !this.conditionAvailable('damping'); friction.disabled=!!this.wizard || !this.conditionAvailable('friction');
+      conditionStatus.textContent=this.bridge&&!this.bridgeAdvanced?'Restart the local bridge to use adjustable output, damping and friction.':this.hid.conditionError ||
+        'Damping: '+(damping.disabled?'unavailable':'supported')+' · Friction: '+(friction.disabled?'unavailable':'supported')+'. Base software may add its own resistance.';
       if (this.wizard) {
         const wizard = this.wizard; wizard.observe(devices);
         const [key, phase, heading, prompt] = wizard.step;
@@ -401,7 +440,7 @@ class RigControls {
     refresh(); setInterval(refresh, 33);
   }
 }
-const api = { RigControls, RigWizard, normalize, valid, mappedInput, feedbackForce };
+const api = { RigControls, RigWizard, normalize, valid, mappedInput, feedbackForce, feedbackSignal };
 if (typeof module !== 'undefined') module.exports = api;
 else root.ApexRig = api;
 })(typeof window === 'undefined' ? globalThis : window);

@@ -375,8 +375,9 @@ class Sim {
       if (front) roadInput += (w === 0 ? 1 : -1) * ripple;
       Fz[w] = Math.max(f + ripple, 0);
     }
-    // Two 12 Hz poles retain bumps while suppressing texture above the browser's useful update bandwidth.
-    const roadTarget = clamp(roadInput / 300, -1.5, 1.5) * Math.min(v / 6, 1), roadBlend = 1 - Math.exp(-TAU * 12 * dt);
+    // Two adjustable poles; the default retains the original 12 Hz road filter.
+    const smoothMs=Number.isFinite(this.roadSmoothing)?clamp(this.roadSmoothing,0,50):1000/(TAU*12);
+    const roadTarget = clamp(roadInput / 300, -1.5, 1.5) * Math.min(v / 6, 1), roadBlend = smoothMs>0?1-Math.exp(-dt*1000/smoothMs):1;
     this.roadFilter += (roadTarget - this.roadFilter) * roadBlend;
     this.roadFeedback += (this.roadFilter - this.roadFeedback) * roadBlend;
 
