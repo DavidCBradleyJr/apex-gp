@@ -3,10 +3,10 @@
 set -e
 cd "$(dirname "$0")"
 mkdir -p docs/vendor docs/audio design/project/audio
-cp src/index.html src/game.js src/rig.js src/webhid-ffb.js docs/
+cp src/index.html src/game.js src/rig.js src/overlay.js src/webhid-ffb.js docs/
 cp vendor/*.js docs/vendor/
 cp src/audio/* docs/audio/
 cp src/audio/* design/project/audio/
 touch docs/.nojekyll
-cp src/game.js design/project/game.js   # the canvas keeps its own copy
+cp src/game.js src/overlay.js design/project/   # the canvas keeps its own copy
 echo "docs/ built: $(du -sh docs | cut -f1)"

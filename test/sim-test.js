@@ -118,4 +118,17 @@ for (const def of TRACKS) {
   assert(straight && Math.abs(tr.pz[100]) < 5, def.id + ': s = 60 to 250 m is straight along z = 0 (the pit building and first grandstands stand there)');
   assert(tr.drs.length >= 1 && tr.drs.every(([a, b]) => ((b - a + tr.L) % tr.L) > 150 && ((b - a + tr.L) % tr.L) < 1300), def.id + ': DRS zones are real straights');
 }
+// brakes: pedal pressure, disc temperature and ABS all change the stopping distance (straight line, 200 -> 80 km/h)
+{
+  const stop = (pedal, disc, abs = true) => {
+    const c = new Sim(track, { abs }); c.placeAt(200, 0); c.gear = 6; c.brakeT.fill(disc); c.tyreT.fill(95);
+    c.vx = Math.cos(c.psi) * 200 / 3.6; c.vz = Math.sin(c.psi) * 200 / 3.6; c.brk = pedal; c.speed = 200 / 3.6;
+    let d = 0; for (let n = 0; n < 2400 && !(c.speed < 80 / 3.6); n++) { c.step(DT, { analog: true, steer: 0, throttle: 0, brake: pedal }); d += c.speed * DT; }
+    return d;
+  };
+  const soft = stop(0.3, 500), hard = stop(1, 500), cold = stop(0.5, 150), warm = stop(0.5, 500);
+  console.log('brakes 200-80 km/h: soft', soft.toFixed(0), 'm  hard', hard.toFixed(0), 'm  half pedal cold/warm discs', cold.toFixed(0), '/', warm.toFixed(0), 'm');
+  assert(soft > hard * 1.3, 'a light pedal stops much longer than a hard one');
+  assert(cold > warm * 1.15, 'cold carbon discs bite less than warm ones');
+}
 console.log('OK');

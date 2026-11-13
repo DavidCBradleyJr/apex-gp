@@ -1,7 +1,7 @@
 // Race check: six autopiloted cars race 2 laps; plus slipstream and contact checks. Run: node test/race-test.js
 const path = require('path');
 global.THREE = require(path.join(__dirname, '../vendor/three.min.js'));
-const { buildTrack, Sim, Race, collide, autopilot, fmtTime, TRACKS } = require('../src/game.js');
+const { buildTrack, Sim, Race, collide, autopilot, fmtTime, relGap, TRACKS } = require('../src/game.js');
 const assert = require('assert');
 const track = buildTrack(), DT = 1 / 240;
 let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -57,6 +57,14 @@ for (const skill of ['rookie', 'pro', 'elite']) {
   assert(passes > 0 && race.player.pos <= 4, 'the quickest car makes up places from the back, got P' + race.player.pos);
   assert(contacts <= 60, 'AI cars may rub (a quarter of a second of contact in total) but do not lean on each other');
   assert(race.cars.every(c => !c.recovered), 'nobody had to be recovered');
+}
+// --- relative gap: the player's own is 0, wraps across the line, and a lap-up car reads +1 ---
+{
+  const L = track.L, race = new Race(track, new Sim(track, {}), { laps: 2, skill: 'pro', rnd }), me = race.player;
+  assert(relGap(L, me.sim.s, me.sim.s, me.progress, me.progress, 60).rel === 0, 'own rel is 0');
+  for (const c of race.cars) { const g = relGap(L, c.sim.s, me.sim.s, c.progress, me.progress, 60); assert(Math.abs(g.rel) <= L / 60, 'rel within +-L/60'); }
+  const w = relGap(L, 10, L - 10, L + 10, L - 10, 60); assert(Math.abs(w.rel - 20 / 60) < 1e-9 && w.lapDiff === 0, 'gap wraps across the line');
+  assert(relGap(L, 100, 100, 2 * L + 100, L + 100, 60).lapDiff === 1, 'a lap up reads +1');
 }
 // --- the other circuits: one pro race each. The AI was tuned on Kestrel, so the bar here is only that the race works. ---
 for (const def of TRACKS.slice(1)) {

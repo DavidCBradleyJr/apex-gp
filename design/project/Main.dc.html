@@ -10,6 +10,7 @@
 <script src="./vendor/postfx.js"></script>
 <script src="./vendor/car.js"></script>
 <script src="./game.js?v=v12-recording-1"></script>
+<script src="./overlay.js"></script>
 </head>
 <body>
 <x-dc>
@@ -201,6 +202,21 @@ a{color:#ff8a4c}a:hover{color:#ffb38a}
 </div>
 <div class="agp-num" style="display: flex; flex-direction: column; font-size: 15px; color: #c3c9d1; min-width: 96px"><span>LAT {{ gLat }}G</span><span>LON {{ gLong }}G</span><span style="color: {{ brakeColor }}">DISCS {{ brakeF }}°</span><span>FUEL {{ fuel }} KG</span></div>
 </div>
+<canvas ref="{{ setInputs }}" width="360" height="120" aria-hidden="true" style="position: absolute; right: 20px; bottom: 20px; width: 360px; height: 120px; border-radius: 12px; display: {{ inputsDisplay }}"></canvas>
+<sc-if value="{{ showDelta }}" hint-placeholder-val="{{ false }}">
+<div aria-hidden="true" style="position: absolute; left: 50%; top: 112px; transform: translateX(-50%); width: 260px; height: 22px; background: rgba(11,13,16,0.62); border-radius: 11px; overflow: hidden">
+<i style="position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.35)"></i>
+<div style="position: absolute; top: 0; bottom: 0; left: {{ deltaBar.left }}%; width: {{ deltaBar.width }}%; background: {{ deltaBar.color }}"></div>
+<div class="agp-num" style="position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; font-weight: 700; text-shadow: 0 1px 3px #000">{{ deltaBar.text }}</div>
+</div>
+</sc-if>
+<sc-if value="{{ showRelative }}" hint-placeholder-val="{{ false }}">
+<div class="agp-num" style="position: absolute; right: 20px; bottom: 152px; width: 220px; display: grid; grid-template-columns: 18px 1fr auto; gap: 2px 10px; font-size: 17px; padding: 8px 12px; box-sizing: border-box; background: rgba(10,12,16,0.78); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08)">
+<sc-for list="{{ relRows }}" as="r" hint-placeholder-count="7">
+<span style="color: {{ r.color }}; font-weight: {{ r.weight }}">{{ r.pos }}</span><span style="color: {{ r.color }}; font-weight: {{ r.weight }}">{{ r.code }}</span><span style="color: {{ r.gapColor }}">{{ r.gap }}</span>
+</sc-for>
+</div>
+</sc-if>
 </sc-if>
 
 <sc-if value="{{ isLights }}" hint-placeholder-val="{{ false }}">
@@ -332,10 +348,11 @@ a{color:#ff8a4c}a:hover{color:#ffb38a}
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#ff6a1a","options":["#ff6a1a","#2f8cff","#e8ff3a","#ff2d55"]},"units":{"editor":"enum","options":["km/h","mph"],"default":"km/h"},"$preview":{"width":1440,"height":810}}'>
+const OVL = ['inputs', 'full', 'off'];
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { t: null, setup: { compound: 'soft', frontWing: 6, rearWing: 6, brakeBias: 57, tc: true, abs: true, autoGear: true, time: 'afternoon', line: 'full', ghost: true, mode: 'tt', laps: 3, skill: 'pro', track: 'kestrel', camera: 0, engineEra: 'v6' }, map: null, error: '' };
+    this.state = { t: null, setup: { compound: 'soft', frontWing: 6, rearWing: 6, brakeBias: 57, tc: true, abs: true, autoGear: true, time: 'afternoon', line: 'full', ghost: true, mode: 'tt', laps: 3, skill: 'pro', track: 'kestrel', camera: 0, engineEra: 'v6' }, map: null, error: '', ovl: this.loadOvl() };
     this.game = null; this.root = null; this.mapOn = false;
     this.toggleMap = () => { this.mapOn = !this.mapOn; if (this.game) this.game.overview(this.mapOn, 0.16); this.forceUpdate ? this.forceUpdate() : this.setState({}); };
     this.setRoot = (el) => { this.root = el; };
@@ -361,11 +378,35 @@ class Component extends DCLogic {
     this.onKeyDown = (e) => {
       if (!this.game) return;
       const c = e.code;
+      if (c === 'KeyH') { if (!e.repeat) this.cycleOvl(); return; } // overlay mode, not forwarded to the game
       if (c === 'ArrowUp' || c === 'ArrowDown' || c === 'ArrowLeft' || c === 'ArrowRight' || c === 'Space') e.preventDefault();
       const phase = this.state.t ? this.state.t.phase : 'menu';
       if (c === 'Enter' && phase === 'menu') { this.start(); return; }
       if (e.repeat) return;
       this.game.key(c, true);
+    };
+    this.cycleOvl = () => {
+      const ovl = OVL[(OVL.indexOf(this.state.ovl) + 1) % OVL.length];
+      try { localStorage.setItem('apexgp.canvas.overlay', ovl); } catch (e) {}
+      this.setState({ ovl });
+    };
+    // pedal trace: own frame loop (15 Hz telemetry is too coarse); samples only while racing
+    this.trace = window.ApexOverlay ? window.ApexOverlay.createTrace(300) : null; this.inEl = null; this.inRaf = 0; this.lastS = 0;
+    this.setInputs = (el) => {
+      this.inEl = el;
+      if (!el) { cancelAnimationFrame(this.inRaf); this.inRaf = 0; return; }
+      if (this.inRaf || !this.trace) return;
+      const ctx = el.getContext('2d'), w = 360, h = 120;
+      const frame = (now) => {
+        this.inRaf = requestAnimationFrame(frame);
+        const t = this.state.t, s = this.game && this.game.sim;
+        if (!s || !t || this.state.ovl === 'off') return;
+        const dpr = window.devicePixelRatio || 1;
+        if (el.width !== w * dpr) { el.width = w * dpr; el.height = h * dpr; }
+        if (t.phase === 'run' && now - this.lastS >= 1000 / 60) { this.lastS = now; this.trace.push(s.thr, s.brk, s.absActive); }
+        window.ApexOverlay.drawInputs(ctx, w, h, this.trace, s, this.props.units === 'mph' ? 'mph' : 'kmh');
+      };
+      this.inRaf = requestAnimationFrame(frame);
     };
     this.onKeyUp = (e) => { if (this.game) this.game.key(e.code, false); };
     this.start = () => {
@@ -383,7 +424,8 @@ class Component extends DCLogic {
     const num = (k) => (e) => { const v = parseFloat(e.target.value); this.setState({ setup: Object.assign({}, this.state.setup, { [k]: v }) }); };
     this.onFrontWing = num('frontWing'); this.onRearWing = num('rearWing'); this.onBias = num('brakeBias');
   }
-  componentWillUnmount() { if (this.game) this.game.destroy(); }
+  loadOvl() { try { const v = localStorage.getItem('apexgp.canvas.overlay'); if (OVL.includes(v)) return v; } catch (e) {} return 'inputs'; }
+  componentWillUnmount() { cancelAnimationFrame(this.inRaf); this.inRaf = 0; if (this.game) this.game.destroy(); }
   buildMap(tr) {
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (let i = 0; i < tr.N; i++) { x0 = Math.min(x0, tr.px[i]); x1 = Math.max(x1, tr.px[i]); z0 = Math.min(z0, tr.pz[i]); z1 = Math.max(z1, tr.pz[i]); }
@@ -456,6 +498,7 @@ class Component extends DCLogic {
       tog('Gearbox', setup.autoGear, flip('autoGear'), 'AUTO', 'MANUAL'),
       tog('Racing line', setup.line !== 'off', () => this.setState({ setup: Object.assign({}, setup, { line: LINE_NEXT[setup.line] }) }), LINE_LABEL[setup.line], 'OFF'),
       tog('Ghost car', setup.ghost, flip('ghost'), 'ON', 'OFF'),
+      tog('Overlay (H)', this.state.ovl !== 'off', () => this.cycleOvl(), this.state.ovl.toUpperCase(), 'OFF'),
       tog('Session time', golden, () => this.setState({ setup: Object.assign({}, setup, { time: golden ? 'afternoon' : 'golden' }) }), 'GOLDEN HR', 'AFTERNOON'),
     ];
     const race = t.race, isRaceSetup = setup.mode === 'race';
@@ -496,6 +539,15 @@ class Component extends DCLogic {
     const laps = (t.laps || []).map(l => ({ lap: l.lap, time: l.time, color: l.valid ? '#f3f4f6' : '#ff8a80' }));
     if (t.tel && this.game && (this.telKey !== t.lapsDone || !this.tel)) { this.tel = this.buildTel(); this.telKey = t.lapsDone; }
     const tel = t.tel && this.tel ? this.tel : null;
+    const ovOn = this.state.ovl !== 'off', dc = Math.max(-1, Math.min(1, d || 0)); // delta bar grows left when ahead, right when behind
+    const deltaBar = { left: dc < 0 ? 50 + dc * 50 : 50, width: Math.abs(dc) * 50, color: d > 0 ? '#ff3b30' : '#2bd96b', text: d === null || d === undefined ? '—' : (d > 0 ? '+' : '') + d.toFixed(2) };
+    let relRows = [];
+    if (race && ovOn) {
+      const by = race.cars.filter(c => !c.you).sort((a, b) => b.rel - a.rel), you = race.cars.find(c => c.you);
+      relRows = [...by.filter(c => c.rel > 0).slice(-3), you, ...by.filter(c => c.rel <= 0).slice(0, 3)].filter(Boolean).map(c => c.you
+        ? { pos: c.pos, code: c.code, gap: '', color: accent, gapColor: accent, weight: 800 }
+        : { pos: c.pos, code: c.code, gap: (c.rel > 0 ? '+' : '-') + Math.abs(c.rel).toFixed(1), color: hueCol(c.hue), gapColor: c.lapDiff < 0 ? '#6fb3ff' : c.lapDiff > 0 ? '#ff5a4f' : '#9aa3ad', weight: 500 });
+    }
     const hasBest = !!t.bestLap && t.bestLap.charAt(0) !== '-';
     return {
       accent, t, setup, compounds, toggles, aeroNote, compoundNote: notes[setup.compound],
@@ -517,6 +569,7 @@ class Component extends DCLogic {
       sectors, lastColor: t.lastValid === false ? '#ff8a80' : '#f3f4f6',
       mapPath: map ? map.d : 'M0 0', startX: map ? map.start[0] : 0, startY: map ? map.start[1] : 0, carX: car[0], carY: car[1],
       hasMessage: !!t.message,
+      inputsDisplay: ovOn ? 'block' : 'none', showDelta: this.state.ovl === 'full', deltaBar, showRelative: relRows.length > 0, relRows,
       fpsLabel: t.fps ? t.fps + ' FPS' : '',
       dashDisplay: t.camera === 'COCKPIT' ? 'none' : 'flex', // in the cockpit the steering wheel's own display carries this
       leds, speed: units === 'mph' ? Math.round((t.speed || 0) * 0.6214) : (t.speed || 0), unitsLabel: units === 'mph' ? 'MPH' : 'KM/H',
@@ -529,7 +582,7 @@ class Component extends DCLogic {
       startLights, lightsAria: lightsN + ' of 5 start lights on',
       hasReaction: phase === 'run' && !race && t.reaction !== null && t.reaction !== undefined && t.lap === 0, reaction: t.reaction ? t.reaction.toFixed(3) + ' s' : '',
       start: this.start, resume: this.resume, toMenu: this.toMenu, onFrontWing: this.onFrontWing, onRearWing: this.onRearWing, onBias: this.onBias,
-      setRoot: this.setRoot, setCanvas: this.setCanvas, onKeyDown: this.onKeyDown, onKeyUp: this.onKeyUp,
+      setRoot: this.setRoot, setCanvas: this.setCanvas, setInputs: this.setInputs, onKeyDown: this.onKeyDown, onKeyUp: this.onKeyUp,
     };
   }
 }

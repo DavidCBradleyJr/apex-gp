@@ -100,6 +100,21 @@
   #overlay button { min-height: 46px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,0.05); font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.12em; }
   #overlay button.main { background: var(--accent); color: #120800; border: 0; }
   #result { display: grid; grid-template-columns: 24px 1fr auto; gap: 4px 14px; text-align: left; font-size: 19px; }
+  #inputs { top: auto; left: auto; right: 18px; bottom: 18px; width: 360px; height: 120px; border-radius: 12px; }
+  #relative { right: 18px; bottom: 150px; width: 220px; display: grid; grid-template-columns: 18px 1fr auto; gap: 2px 10px; font-size: 17px; padding: 8px 12px; }
+  #relative .you { color: var(--accent); font-weight: 800; }
+  #hud.ov-off #relative { display: none; }
+  #timing, #mapBox, #tyres, #dash, #inputs, #deltaBar, #relative { cursor: move; } /* draggable widgets (mouse) */
+  #deltaBar { left: 50%; top: 18px; transform: translateX(-50%); width: 260px; height: 22px; background: rgba(11,13,16,0.62); border-radius: 11px; overflow: hidden; }
+  #deltaFill { position: absolute; top: 0; bottom: 0; }
+  #deltaNum { position: absolute; inset: 0; display: grid; place-items: center; font: 700 15px 'Barlow Condensed', sans-serif; text-shadow: 0 1px 3px #000; }
+  #deltaBar i { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.35); }
+  #hud.ov-off #inputs, #hud:not(.ov-full) #deltaBar { display: none; }
+  #hud.ov-full #mapBox { width: 300px; background: rgba(11,13,16,0.55); }
+  #hud.ov-full #mapBox svg { height: 205px; }
+  /* the larger map would run into the bottom-right inputs on short windows */
+  @media (max-height: 560px) { #hud.ov-full #mapBox svg { height: 110px; } }
+  @media (max-width: 760px) { #inputs, #deltaBar, #relative { display: none !important; } }
   @media (max-width: 760px) { #tyres, #mapBox svg { display: none; } #timing { width: 190px; } #lapTime { font-size: 34px; } }
 </style>
 </head>
@@ -153,6 +168,7 @@
 </div>
 
 <div id="hud" hidden>
+  <div id="deltaBar"><i></i><div id="deltaFill"></div><div id="deltaNum" class="num"></div></div>
   <div id="timing" class="panel">
     <div class="label" id="lapLabel">LAP 1</div>
     <div class="num" id="lapTime">0:00.000</div>
@@ -165,6 +181,8 @@
     <svg viewBox="0 0 220 160" aria-hidden="true"><path id="mapPath" fill="none" stroke="#f3f4f6" stroke-width="4" stroke-linejoin="round"/><g id="mapDots"></g><circle id="mapCar" r="6" fill="#ff6a1a" stroke="#0b0d10" stroke-width="2"/></svg>
     <div id="mapMeta" class="num"><span id="camLabel"></span><span id="lineLabel"></span><span id="boxLabel"></span><span id="fpsLabel"></span></div>
   </div>
+  <div id="relative" class="panel num" hidden></div>
+  <canvas id="inputs" class="panel" aria-hidden="true"></canvas>
   <div id="tyres" class="panel">
     <div><div class="label" id="compound" style="margin-bottom: 6px">SOFT</div><div id="tyreGrid"><div></div><div></div><div></div><div></div></div></div>
     <div id="stats" class="num"></div>
@@ -204,18 +222,21 @@
 <script src="game.js?v=v12-recording-1"></script>
 <script src="webhid-ffb.js"></script>
 <script src="rig.js"></script>
+<script src="overlay.js"></script>
 <script>
 // Standalone page for the engine (GitHub Pages build). The Claude Design canvas in design/project is the richer UI:
 // it adds wing and brake-bias sliders and the lap telemetry screen.
 (function () {
   const $ = (id) => document.getElementById(id), canvas = $('c'), A = window.ApexGP;
   if (!A || !window.THREE) { $('status').textContent = 'The 3D engine did not load. Reload the page.'; return; }
-  const setup = { track: 'kestrel', team: 'apex', camera: 0, mode: 'tt', laps: 3, skill: 'pro', compound: 'soft', tc: true, abs: true, autoGear: true, line: 'full', ghost: true, time: 'afternoon', gfx: 'auto', units: 'kmh', map: true, engineEra: 'v6' };
+  const setup = { track: 'kestrel', team: 'apex', camera: 0, mode: 'tt', laps: 3, skill: 'pro', compound: 'soft', tc: true, abs: true, autoGear: true, line: 'full', ghost: true, time: 'afternoon', gfx: 'auto', units: 'kmh', map: true, engineEra: 'v6', overlay: 'inputs', layout: {} };
   // settings are remembered between visits
   const KEY = 'apexgp.settings.v1';
   try { const o = JSON.parse(localStorage.getItem(KEY) || '{}'); for (const k in setup) if (typeof o[k] === typeof setup[k]) setup[k] = o[k]; } catch (e) { /* first visit or storage blocked */ }
   if (!A.TRACKS.some(x => x.id === setup.track)) setup.track = 'kestrel';
   if (!A.ENGINE_ERAS.some(x => x.id === setup.engineEra)) setup.engineEra = 'v6';
+  if (!['inputs', 'full', 'off'].includes(setup.overlay)) setup.overlay = 'inputs';
+  if (!setup.layout || typeof setup.layout !== 'object' || Array.isArray(setup.layout)) setup.layout = {};
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(setup)); } catch (e) { /* storage blocked */ } };
   const CAMS = ['CHASE', 'T-CAM', 'COCKPIT'];
   const controls = new ApexRig.RigControls(); controls.mount($('rigControls'));
@@ -248,6 +269,7 @@
     if (k === 'map' && game) game.overview(setup.map, 0.16);
     save(); menu();
   };
+  const OVL = ['inputs', 'full', 'off'];
   const GFX = { auto: 'AUTO', 2: 'HIGH', 1: 'MEDIUM', 0: 'LOW' };
   function menu() {
     const def = A.trackDef(setup.track), race = setup.mode === 'race', on = (v) => v ? 'ON' : 'OFF';
@@ -260,7 +282,7 @@
       ['Gearbox', setup.autoGear ? 'AUTO' : 'MANUAL', cyc('autoGear', [true, false])], ['Racing line', setup.line.toUpperCase(), cyc('line', ['full', 'braking', 'off'])], ['Ghost car', on(setup.ghost), cyc('ghost', [true, false])],
       ['Time of day', setup.time === 'golden' ? 'GOLDEN HOUR' : 'AFTERNOON', cyc('time', ['afternoon', 'golden'])]];
     const disp = [['Graphics', GFX[setup.gfx], cyc('gfx', ['auto', '2', '1', '0'])], ['Speed in', setup.units === 'mph' ? 'MPH' : 'KM/H', cyc('units', ['kmh', 'mph'])],
-      ['Fullscreen', document.fullscreenElement ? 'ON' : 'OFF', fullscreen]];
+      ['Overlay', setup.overlay.toUpperCase(), cyc('overlay', OVL)], ['Widget layout', Object.keys(setup.layout).length ? 'RESET' : 'DEFAULT', resetLayout], ['Fullscreen', document.fullscreenElement ? 'ON' : 'OFF', fullscreen]];
     $('mapBtn').textContent = ''; $('mapBtn').append('Menu shows', Object.assign(document.createElement('b'), { textContent: setup.map ? 'CIRCUIT MAP' : 'THE CAR' })); $('mapBtn').onclick = cyc('map', [true, false]);
     for (const [id, list] of [['sessionOpts', session], ['carOpts', car], ['dispOpts', disp]]) {
       const box = $(id); box.textContent = '';
@@ -268,6 +290,28 @@
     }
     $('trackNote').textContent = def.note + '. On the map: sectors in red, blue and yellow, DRS zones in green, white post at the start line.';
     $('modeLine').textContent = race ? 'RACE · ' + setup.laps + ' LAPS · 6 CARS' : 'TIME TRIAL';
+  }
+  // draggable HUD widgets: positions are stored as viewport fractions so they survive resizes
+  const WIDGETS = ['timing', 'mapBox', 'tyres', 'dash', 'inputs', 'deltaBar', 'relative'];
+  function applyLayout() {
+    for (const id of WIDGETS) {
+      const el = $(id), f = setup.layout[id]; if (!f || !Array.isArray(f) || !(el.offsetWidth > 0)) continue; // hidden panels have no size to clamp with; re-applied when shown
+      Object.assign(el.style, { left: Math.max(0, Math.min(innerWidth - el.offsetWidth, f[0] * innerWidth)) + 'px', top: Math.max(0, Math.min(innerHeight - el.offsetHeight, f[1] * innerHeight)) + 'px', right: 'auto', bottom: 'auto', transform: 'none' });
+    }
+  }
+  function resetLayout() { setup.layout = {}; for (const id of WIDGETS) Object.assign($(id).style, { left: '', top: '', right: '', bottom: '', transform: '' }); save(); menu(); }
+  addEventListener('resize', applyLayout);
+  for (const id of WIDGETS) {
+    const el = $(id); let dx = 0, dy = 0, on = false;
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0 || e.target.closest('button')) return;
+      const r = el.getBoundingClientRect(); dx = e.clientX - r.left; dy = e.clientY - r.top; on = true; el.setPointerCapture(e.pointerId);
+      Object.assign(el.style, { left: r.left + 'px', top: r.top + 'px', right: 'auto', bottom: 'auto', transform: 'none' }); // leave the CSS anchor (centred / bottom) behind
+    });
+    el.addEventListener('pointermove', (e) => { if (!on) return; el.style.left = Math.max(0, Math.min(innerWidth - el.offsetWidth, e.clientX - dx)) + 'px'; el.style.top = Math.max(0, Math.min(innerHeight - el.offsetHeight, e.clientY - dy)) + 'px'; });
+    el.addEventListener('pointerup', (e) => {
+      if (!on) return; on = false; setup.layout[id] = [el.offsetLeft / innerWidth, el.offsetTop / innerHeight]; save(); canvas.focus();
+    });
   }
   function fullscreen() { if (document.fullscreenElement) document.exitFullscreen(); else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); }
   document.addEventListener('fullscreenchange', menu);
@@ -284,6 +328,7 @@
   addEventListener('keydown', (e) => {
     if (e.target.closest('button, input, select, summary')) return;
     if (!game || e.code === 'KeyT' || e.ctrlKey || e.metaKey || e.altKey) return; // T is the canvas-only telemetry screen
+    if (e.code === 'KeyH') { if (!e.repeat && t && t.phase !== 'menu') { setup.overlay = OVL[(OVL.indexOf(setup.overlay) + 1) % 3]; save(); menu(); hud(); } return; } // overlay mode, not forwarded to the game
     if (e.code === 'KeyF') { if (!e.repeat) fullscreen(); return; }
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (e.code === 'Enter' && (!t || t.phase === 'menu')) { start(); return; }
@@ -302,7 +347,11 @@
     const rigWheel = controls.allDevices().find(d => controls.profile.steer && d.key === controls.profile.steer.device);
     $('ovRigResume').hidden = !(t.phase === 'paused' && controls.enabled && controls.ffbAvailable(rigWheel) && ApexRig.mappedInput(controls.profile, controls.allDevices()));
     const p = t.phase, driving = p !== 'menu';
-    $('menu').hidden = driving; $('hud').hidden = !driving;
+    const hudWas = $('hud').hidden; $('menu').hidden = driving; $('hud').hidden = !driving; if (driving && hudWas) applyLayout();
+    $('hud').className = 'ov-' + setup.overlay;
+    const d = t.delta, db = $('deltaFill'), dc = Math.max(-1, Math.min(1, d || 0)); // bar grows left when ahead, right when behind
+    db.style.left = (dc < 0 ? 50 + dc * 50 : 50) + '%'; db.style.width = Math.abs(dc) * 50 + '%'; db.style.background = d > 0 ? '#ff3b30' : '#2bd96b';
+    $('deltaNum').textContent = d === null ? '—' : (d > 0 ? '+' : '') + d.toFixed(2);
     const cam = CAMS.indexOf(t.camera); if (driving && cam >= 0 && cam !== setup.camera) { setup.camera = cam; save(); menu(); } // C while driving is remembered
     if (!driving) {
       const g = ['LOW', 'MEDIUM', 'HIGH'][t.fxq] + (t.fxAuto ? ' (auto)' : '');
@@ -318,6 +367,18 @@
     $('delta').textContent = t.delta === null ? '—' : (t.delta > 0 ? '+' : '') + t.delta.toFixed(2); $('delta').style.color = t.delta === null ? '' : t.delta <= 0 ? '#2bd96b' : '#ff5a4f';
     const tower = $('tower'); tower.hidden = !r;
     if (r) { tower.textContent = ''; for (const c of r.cars) { const a = document.createElement('span'), b = document.createElement('span'), g = document.createElement('span'); a.textContent = c.pos; b.textContent = c.code; b.style.color = c.color || hue(c.hue); if (c.you) b.style.fontWeight = 800; g.textContent = c.gap; g.style.color = 'var(--dim)'; tower.append(a, b, g); } }
+    const rel = $('relative'), relWas = rel.hidden; rel.hidden = !r;
+    if (r) {
+      const me = r.cars.findIndex(c => c.you), by = r.cars.filter(c => !c.you).sort((a, b) => b.rel - a.rel), ah = by.filter(c => c.rel > 0).slice(-3), bh = by.filter(c => c.rel <= 0).slice(0, 3);
+      rel.textContent = '';
+      for (const c of [...ah, r.cars[me], ...bh]) {
+        const a = document.createElement('span'), b = document.createElement('span'), g = document.createElement('span');
+        a.textContent = c.pos; b.textContent = c.code; g.textContent = c.you ? '' : (c.rel > 0 ? '+' : '-') + Math.abs(c.rel).toFixed(1) + ' s';
+        if (c.you) a.className = b.className = 'you'; else { b.style.color = c.color || hue(c.hue); g.style.color = c.lapDiff < 0 ? '#6fb3ff' : c.lapDiff > 0 ? '#ff5a4f' : 'var(--dim)'; }
+        rel.append(a, b, g);
+      }
+      if (relWas) applyLayout(); // the panel only has a size once shown
+    }
     const m = map(t.mapX, t.mapZ); $('mapCar').setAttribute('cx', m[0]); $('mapCar').setAttribute('cy', m[1]);
     const dots = $('mapDots'); dots.textContent = '';
     if (r) for (const c of r.cars) if (!c.you) { const d = document.createElementNS('http://www.w3.org/2000/svg', 'circle'), q = map(c.x, c.z); d.setAttribute('cx', q[0]); d.setAttribute('cy', q[1]); d.setAttribute('r', 4); d.setAttribute('fill', c.color || hue(c.hue)); dots.append(d); }
@@ -342,6 +403,19 @@
       if (done) { res.textContent = ''; for (const c of r.cars) { const a = document.createElement('span'), b = document.createElement('span'), g = document.createElement('span'); a.textContent = c.pos; b.textContent = c.name || c.code; if (c.you) b.style.color = 'var(--accent)'; g.textContent = c.gap; res.append(a, b, g); } }
     }
   }
+  // input overlay: own frame loop (the 15 Hz telemetry is too coarse for a 5 s pedal trace); samples only while racing
+  const ic = $('inputs'), ictx = ic.getContext('2d'), trace = ApexOverlay.createTrace(300);
+  let lastS = 0;
+  function overlayFrame(now) {
+    requestAnimationFrame(overlayFrame);
+    if (!game || !t || t.phase === 'menu' || setup.overlay === 'off' || $('hud').hidden || getComputedStyle(ic).display === 'none') return;
+    const dpr = window.devicePixelRatio || 1, w = 360, h = 120;
+    if (ic.width !== w * dpr) { ic.width = w * dpr; ic.height = h * dpr; }
+    const s = game.sim;
+    if (t.phase === 'run' && now - lastS >= 1000 / 60) { lastS = now; trace.push(s.thr, s.brk, s.absActive); }
+    ApexOverlay.drawInputs(ictx, w, h, trace, s, setup.units);
+  }
+  requestAnimationFrame(overlayFrame);
   // deep link: ?track=callow&team=ferrari&mode=race&cam=2&start=1
   const q = new URLSearchParams(location.search);
   if (A.TRACKS.some(x => x.id === q.get('track'))) setup.track = q.get('track');

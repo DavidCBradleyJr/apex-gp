@@ -282,6 +282,10 @@ function ghostPose(rec, lapT, out) {
   return out;
 }
 
+// Carbon-carbon disc friction against temperature (°C): barely bites cold, works from about 400, fades past 1000.
+const brakeMu = (T) => { const x = clamp((T - 20) / 430, 0, 1); return 0.5 + 0.5 * x * x * (3 - 2 * x) - 0.4 * clamp((T - 1000) / 400, 0, 1); };
+const ABS_LOSS = 0.88; // share of the threshold-braking force ABS holds when it intervenes
+
 function pacejka(alpha) { const x = 16 * alpha; return Math.sin(1.6 * Math.atan(x)); }
 
 class Sim {
@@ -434,8 +438,7 @@ class Sim {
       this.alpha[w] += (aRaw - this.alpha[w]) * Math.min(1, (Math.abs(lx) + 2) * dt / 0.35);
 
       // longitudinal demand
-      // carbon discs: weak bite when cold, fade when cooked
-      const bT = this.brakeT[w], bEff = bT < 400 ? 0.8 + 0.2 * Math.max(bT - 150, 0) / 250 : 1 - clamp((bT - 1050) / 500, 0, 0.4);
+      const bT = this.brakeT[w], bEff = brakeMu(bT);
       const fbw = (front ? Fb * bias : Fb * (1 - bias)) / 2 * bEff;
       let fxd = -vsign * fbw;
       if (!front) fxd += drive / 2;
@@ -446,9 +449,11 @@ class Sim {
       const assist = braking ? set.abs : set.tc;
       const usage = Math.min(1, Math.abs(pacejka(this.alpha[w])));
       const pastPeak = Math.abs(this.alpha[w]) > 0.085;
-      const cap = assist && Math.abs(vx) > 2 ? (pastPeak && !braking ? 0.05 : Math.max(0.3, Math.sqrt(1 - usage * usage)) * 0.97) : 1;
+      let cap = assist && Math.abs(vx) > 2 ? (pastPeak && !braking ? 0.05 : Math.max(0.3, Math.sqrt(1 - usage * usage)) * 0.97) : 1;
       if (ratio > cap) {
-        if (assist && Math.abs(vx) > 2) { fx = Math.sign(fxd) * Fmax * cap; ratio = cap; latK = Math.sqrt(1 - cap * cap); if (braking) this.absActive = true; else this.tcActive = true; }
+        // ABS cycles the pressure around lock-up, so it gives away grip: a driver holding the pedal just under the
+        // threshold stops shorter than one standing on it. (TC stays exact: it trims torque, it does not pulse.)
+        if (assist && Math.abs(vx) > 2) { if (braking) cap *= ABS_LOSS; fx = Math.sign(fxd) * Fmax * cap; ratio = cap; latK = Math.sqrt(1 - cap * cap); if (braking) this.absActive = true; else this.tcActive = true; }
         else if (braking && Math.abs(vx) > 2) { fx = Math.sign(fxd) * Fmax * 0.78; latK = 0.12; this.lock[w] = 1; this.wear[w] += dt * 0.004; }
         else if (!braking && Math.abs(vx) > 0.5) { fx = Math.sign(fxd) * Fmax * 0.8; latK = 0.22; this.spin[w] = 1; }
         else { fx = Math.sign(fxd) * Fmax; latK = 0; }
@@ -562,6 +567,11 @@ function fmtTime(t) {
 }
 
 // ---------------- Autopilot (used by tests and the menu attract loop) ----------------
+// On-track gap to the player: ds wraps to +-L/2 (positive = ahead); lapDiff +1 = a lap up on the player. Speed floor keeps the gap finite when slow.
+function relGap(L, sCar, sMe, progCar, progMe, speed) {
+  const ds = ((sCar - sMe) % L + 1.5 * L) % L - 0.5 * L;
+  return { rel: ds / Math.max(speed, 30), lapDiff: Math.round((progCar - progMe - ds) / L) };
+}
 function autopilot(sim, look = 8, pace = 1, off = 0, vCap = 1e9) {
   const tr = sim.track, L = tr.line, v = sim.speed;
   const j = (sim.idx + Math.round((look + v * TUNE.look) / tr.ds)) % tr.N;
@@ -1998,7 +2008,7 @@ function create(canvas, opts = {}) {
           const best = c.sim.lapsDone.reduce((m, l) => Math.min(m, l.time), 1e9);
           let gap = c === lead ? (c.finished ? fmtTime(c.finishT) : 'LEADER') : c.finished && lead.finished ? '+' + (c.finishT - lead.finishT).toFixed(3) : '+' + ((lead.progress - c.progress) / Math.max(c.sim.speed, 30)).toFixed(1);
           if (lead.finished && !c.finished) gap = 'ON TRACK';
-          return { code: c.code, name: c.name, pos: c.pos, you: !c.ai, hue: c.hue, team: teamDef(c.team)[1], color: teamColor(c.team), x: c.sim.x, z: c.sim.z, gap, best: best < 1e9 ? fmtTime(best) : '' };
+          return { ...relGap(L, c.sim.s, race.player.sim.s, c.progress, race.player.progress, race.player.sim.speed), code: c.code, name: c.name, pos: c.pos, you: !c.ai, hue: c.hue, team: teamDef(c.team)[1], color: teamColor(c.team), x: c.sim.x, z: c.sim.z, gap, best: best < 1e9 ? fmtTime(best) : '' };
         }),
       };
     }
@@ -2070,7 +2080,7 @@ function create(canvas, opts = {}) {
   };
 }
 
-const api = { TUNE, create, buildTrack, TRACKS, TEAMS, teamDef, trackDef, speedProfile, Sim, Race, collide, autopilot, ghostPose, REC_DS, fmtTime, CIRCUIT, CAR, COMPOUNDS, DEFAULT_SETUP, surfaceAt, surfaceRipple, ENGINE_ERAS, EngineAudio: Audio };
+const api = { TUNE, create, buildTrack, TRACKS, TEAMS, teamDef, trackDef, speedProfile, Sim, Race, collide, autopilot, ghostPose, REC_DS, fmtTime, relGap, CIRCUIT, CAR, COMPOUNDS, DEFAULT_SETUP, surfaceAt, surfaceRipple, ENGINE_ERAS, EngineAudio: Audio };
 root.ApexGP = api;
 if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
