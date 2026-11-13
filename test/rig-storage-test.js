@@ -14,6 +14,9 @@ assert(!restored.ffb&&!restored.hid.ready,'saved settings must never arm or conn
 assert(restored.settingsStatus.includes('restored'));
 saved=JSON.stringify({steer:controls.profile.steer});
 const legacy=new RigControls();assert(legacy.enabled);assert.equal(legacy.strength,.6);assert(!legacy.ffb);
+assert(legacy.ffbWanted,'a calibrated wheel from before the FFB choice was saved still wants FFB');
+saved=JSON.stringify({steer:controls.profile.steer,ffbWanted:false});assert(!new RigControls().ffbWanted,'turning FFB off is remembered');
+saved=JSON.stringify({});assert(!new RigControls().ffbWanted,'no wheel set up: no FFB connection');
 saved='{broken';const corrupt=new RigControls();assert(corrupt.settingsStatus.includes('could not be read'));assert(!corrupt.ffb);
 Object.defineProperty(global,'localStorage',{configurable:true,value:{getItem:()=>{throw Error('blocked');},setItem:()=>{throw Error('full');}}});
 const blocked=new RigControls();assert(blocked.settingsStatus.includes('could not be read'));assert(!blocked.save());assert(blocked.settingsStatus.includes('Could not save'));

@@ -153,7 +153,8 @@ class RigControls {
       if (Number.isFinite(tuning[key])) this[key]=clamp(tuning[key],0,max);
     }
     this.invert = tuning.invert === true;
-    this.ffbWanted = this.profile.ffbWanted === true; // the player's Steering FFB choice; arming still waits for a click (Go to grid / Resume)
+    // the player's Steering FFB choice; a calibrated wheel wants FFB until they turn it off. Arming still waits for a click (Go to grid / Resume).
+    this.ffbWanted = typeof this.profile.ffbWanted === 'boolean' ? this.profile.ffbWanted : valid(this.profile.steer, true);
     if (this.ffbWanted) setTimeout(() => this.reconnect(), 0);
     this.block = () => { this.suspended = true; this.silence(); }; // no torque while the page is in the background; FFB stays armed for return
     this.focus = () => { if (!document.hidden) this.suspended = false; };
@@ -237,7 +238,7 @@ class RigControls {
   // through Chrome's device chooser, at most once per page load. Resolves true when browser FFB is connected.
   async reconnect(ask = false) {
     if (this.hid.ready) return true;
-    if (!this.ffbWanted || this.bridge || !this.hid.available || this.hid.connecting || (ask && this.askedHid)) return false;
+    if (!this.ffbWanted || !this.enabled || this.bridge || !this.hid.available || this.hid.connecting || (ask && this.askedHid)) return false;
     if (ask) this.askedHid = true;
     try { await this.hid.connect(!ask); this.error = ''; }
     catch (e) { this.error = e.name === 'NotFoundError' ? 'No wheel selected. Connect browser FFB in Sim rig settings when ready.' : e.message + ' On Linux, check HID device access permissions.'; }
