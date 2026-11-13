@@ -104,7 +104,18 @@
   #relative { right: 18px; bottom: 150px; width: 220px; display: grid; grid-template-columns: 18px 1fr auto; gap: 2px 10px; font-size: 17px; padding: 8px 12px; }
   #relative .you { color: var(--accent); font-weight: 800; }
   #hud.ov-off #relative { display: none; }
-  #timing, #mapBox, #tyres, #dash, #inputs, #deltaBar, #relative { cursor: move; } /* draggable widgets (mouse) */
+  #timing, #mapBox, #tyres, #dash, #inputs, #deltaBar, #relative { cursor: move; transform-origin: top left; } /* draggable widgets (mouse); scale() grows from the corner the position refers to */
+  /* layout editor: every widget forced visible (the !important beats [hidden] and the overlay-mode rules), hidden ones dimmed; .ed boxes are siblings because #inputs is a canvas and cannot hold children */
+  #hud.editing #relative { display: grid !important; } #hud.editing #dash { display: flex !important; } #hud.editing #deltaBar, #hud.editing #inputs { display: block !important; }
+  #hud.editing .wgt-off { opacity: 0.3; } #hud:not(.editing) .wgt-off { display: none !important; } #hud.editing #overlay { display: none !important; }
+  .ed, #edBar { display: none; } #hud.editing .ed { display: block; } #hud.editing #edBar { display: flex; }
+  .ed { position: fixed; z-index: 3; box-sizing: border-box; border: 1px dashed var(--accent); cursor: move; touch-action: none; }
+  .ed .nm { position: absolute; left: 2px; top: 2px; padding: 0 5px; border-radius: 4px; background: var(--accent); color: #120800; font: 700 11px 'Barlow Condensed', sans-serif; letter-spacing: 0.1em; pointer-events: none; }
+  .ed .eye { position: absolute; right: 2px; top: 2px; width: 22px; height: 22px; padding: 0; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); line-height: 1; }
+  .ed.off .eye { color: var(--dim); } .ed .rs { position: absolute; right: -1px; bottom: -1px; width: 14px; height: 14px; background: var(--accent); cursor: nwse-resize; }
+  #edBar { position: fixed; z-index: 4; left: 50%; top: 50px; transform: translateX(-50%); max-width: 92vw; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+  #edBar button { min-height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255,255,255,0.05); font: 700 15px 'Barlow Condensed', sans-serif; letter-spacing: 0.1em; }
+  #edBar button.main { background: var(--accent); color: #120800; border: 0; }
   #deltaBar { left: 50%; top: 18px; transform: translateX(-50%); width: 260px; height: 22px; background: rgba(11,13,16,0.62); border-radius: 11px; overflow: hidden; }
   #deltaFill { position: absolute; top: 0; bottom: 0; }
   #deltaNum { position: absolute; inset: 0; display: grid; place-items: center; font: 700 15px 'Barlow Condensed', sans-serif; text-shadow: 0 1px 3px #000; }
@@ -114,7 +125,7 @@
   #hud.ov-full #mapBox svg { height: 205px; }
   /* the larger map would run into the bottom-right inputs on short windows */
   @media (max-height: 560px) { #hud.ov-full #mapBox svg { height: 110px; } }
-  @media (max-width: 760px) { #inputs, #deltaBar, #relative { display: none !important; } }
+  @media (max-width: 760px) { #inputs, #deltaBar, #relative { display: none !important; } .ed, #edBar { display: none !important; } }
   @media (max-width: 760px) { #tyres, #mapBox svg { display: none; } #timing { width: 190px; } #lapTime { font-size: 34px; } }
 </style>
 </head>
@@ -208,6 +219,7 @@
       <button class="main" id="ovResume" type="button">RESUME</button>
       <button id="ovRigResume" type="button" hidden>RESUME WITH WHEEL FFB</button>
       <button id="ovRestart" type="button">RESTART</button>
+      <button id="ovEdit" type="button">EDIT HUD LAYOUT</button>
       <button id="ovMenu" type="button">BACK TO MENU</button>
     </div>
   </div>
@@ -218,8 +230,9 @@
 <script src="vendor/Sky.js"></script>
 <script src="vendor/postfx.js"></script>
 <script src="vendor/car.js"></script>
+<script src="vendor/f1-cars.js"></script>
 <!-- shortcut: bump this version when the page needs a new engine API. -->
-<script src="game.js?v=v12-recording-1"></script>
+<script src="game.js?v=team-models-1"></script>
 <script src="webhid-ffb.js"></script>
 <script src="rig.js"></script>
 <script src="overlay.js"></script>
@@ -282,7 +295,7 @@
       ['Gearbox', setup.autoGear ? 'AUTO' : 'MANUAL', cyc('autoGear', [true, false])], ['Racing line', setup.line.toUpperCase(), cyc('line', ['full', 'braking', 'off'])], ['Ghost car', on(setup.ghost), cyc('ghost', [true, false])],
       ['Time of day', setup.time === 'golden' ? 'GOLDEN HOUR' : 'AFTERNOON', cyc('time', ['afternoon', 'golden'])]];
     const disp = [['Graphics', GFX[setup.gfx], cyc('gfx', ['auto', '2', '1', '0'])], ['Speed in', setup.units === 'mph' ? 'MPH' : 'KM/H', cyc('units', ['kmh', 'mph'])],
-      ['Overlay', setup.overlay.toUpperCase(), cyc('overlay', OVL)], ['Widget layout', Object.keys(setup.layout).length ? 'RESET' : 'DEFAULT', resetLayout], ['Fullscreen', document.fullscreenElement ? 'ON' : 'OFF', fullscreen]];
+      ['Overlay', setup.overlay.toUpperCase(), cyc('overlay', OVL)], ['Widget layout', Object.keys(setup.layout).length ? 'RESET' : 'DEFAULT', resetLayout], ...(innerWidth > 760 ? [['Edit HUD layout', 'OPEN', editLayout]] : []), ['Fullscreen', document.fullscreenElement ? 'ON' : 'OFF', fullscreen]];
     $('mapBtn').textContent = ''; $('mapBtn').append('Menu shows', Object.assign(document.createElement('b'), { textContent: setup.map ? 'CIRCUIT MAP' : 'THE CAR' })); $('mapBtn').onclick = cyc('map', [true, false]);
     for (const [id, list] of [['sessionOpts', session], ['carOpts', car], ['dispOpts', disp]]) {
       const box = $(id); box.textContent = '';
@@ -291,28 +304,76 @@
     $('trackNote').textContent = def.note + '. On the map: sectors in red, blue and yellow, DRS zones in green, white post at the start line.';
     $('modeLine').textContent = race ? 'RACE · ' + setup.laps + ' LAPS · 6 CARS' : 'TIME TRIAL';
   }
-  // draggable HUD widgets: positions are stored as viewport fractions so they survive resizes
-  const WIDGETS = ['timing', 'mapBox', 'tyres', 'dash', 'inputs', 'deltaBar', 'relative'];
-  function applyLayout() {
+  // draggable HUD widgets: positions are stored as viewport fractions so they survive resizes. Entry: [fx, fy, scale = 1, hidden = false]; old [fx, fy] entries still load
+  const WIDGETS = ['timing', 'mapBox', 'tyres', 'dash', 'inputs', 'deltaBar', 'relative'], SMIN = 0.6, SMAX = 1.8;
+  let editing = false;
+  const lay = (id) => { const f = setup.layout[id]; return Array.isArray(f) && Number.isFinite(f[0]) && Number.isFinite(f[1]) ? [f[0], f[1], Number.isFinite(f[2]) ? Math.min(SMAX, Math.max(SMIN, f[2])) : 1, f[3] === true] : null; }; // storage is untrusted
+  function place(id) { // left/top are the scaled box's top-left (transform-origin top left), clamped on screen via its real rect
+    const el = $(id), f = lay(id); el.classList.toggle('wgt-off', !!f && f[3]);
+    if (!f || !(el.offsetWidth > 0)) return; // hidden panels have no size to clamp with; re-applied when shown
+    Object.assign(el.style, { right: 'auto', bottom: 'auto', transform: 'scale(' + f[2] + ')' });
+    const r = el.getBoundingClientRect();
+    Object.assign(el.style, { left: Math.max(0, Math.min(innerWidth - r.width, f[0] * innerWidth)) + 'px', top: Math.max(0, Math.min(innerHeight - r.height, f[1] * innerHeight)) + 'px' });
+  }
+  function put(id, p) { // change one aspect of an entry (creating it from the current spot), then store the clamped position
+    const el = $(id), r = el.getBoundingClientRect(), f = lay(id) || [r.left / innerWidth, r.top / innerHeight, 1, false];
+    setup.layout[id] = [p.x ?? f[0], p.y ?? f[1], Math.min(SMAX, Math.max(SMIN, p.s ?? f[2])), p.h ?? f[3]]; place(id);
+    const q = el.getBoundingClientRect(); setup.layout[id][0] = q.left / innerWidth; setup.layout[id][1] = q.top / innerHeight;
+  }
+  const applyLayout = () => WIDGETS.forEach(place);
+  function resetLayout() { setup.layout = {}; for (const id of WIDGETS) { $(id).classList.remove('wgt-off'); Object.assign($(id).style, { left: '', top: '', right: '', bottom: '', transform: '' }); } save(); menu(); }
+  addEventListener('resize', applyLayout);
+  function bindDrag(h, id, ok) { // h is the widget itself while driving, its .ed box while editing
+    let dx = 0, dy = 0, on = false, moved = false;
+    h.addEventListener('pointerdown', (e) => {
+      if (!ok(e) || e.button !== 0 || e.target.closest('button, .rs')) return;
+      const r = $(id).getBoundingClientRect(); dx = e.clientX - r.left; dy = e.clientY - r.top; on = true; moved = false; h.setPointerCapture(e.pointerId);
+    });
+    h.addEventListener('pointermove', (e) => { if (on) { moved = true; put(id, { x: (e.clientX - dx) / innerWidth, y: (e.clientY - dy) / innerHeight }); } });
+    h.addEventListener('pointerup', () => { if (!on) return; on = false; if (moved) save(); canvas.focus(); });
+  }
+  for (const id of WIDGETS) bindDrag($(id), id, (e) => !editing && e.pointerType === 'mouse');
+
+  // layout editor: dashed .ed boxes over the widgets carry drag, wheel/corner resize and the eye; the game stays paused underneath
+  const ed = {};
+  function edBuild() {
+    const bar = document.createElement('div'); bar.id = 'edBar';
+    const hint = Object.assign(document.createElement('span'), { textContent: 'Drag to move · scroll or drag the corner to resize · click the eye to hide' });
+    const mk = (txt, fn, cls) => Object.assign(document.createElement('button'), { type: 'button', textContent: txt, className: cls || '', onclick: fn });
+    bar.append(hint, mk('RESET ALL', () => { resetLayout(); applyLayout(); }), mk('DONE', exitEdit, 'main')); $('hud').append(bar);
     for (const id of WIDGETS) {
-      const el = $(id), f = setup.layout[id]; if (!f || !Array.isArray(f) || !(el.offsetWidth > 0)) continue; // hidden panels have no size to clamp with; re-applied when shown
-      Object.assign(el.style, { left: Math.max(0, Math.min(innerWidth - el.offsetWidth, f[0] * innerWidth)) + 'px', top: Math.max(0, Math.min(innerHeight - el.offsetHeight, f[1] * innerHeight)) + 'px', right: 'auto', bottom: 'auto', transform: 'none' });
+      const d = document.createElement('div'), eye = document.createElement('button'), rs = document.createElement('div');
+      d.className = 'ed'; eye.className = 'eye'; eye.type = 'button'; rs.className = 'rs';
+      d.append(Object.assign(document.createElement('span'), { className: 'nm', textContent: id.toUpperCase() }), eye, rs); $('hud').append(d); ed[id] = { d, eye };
+      bindDrag(d, id, (e) => e.pointerType === 'mouse' || e.pointerType === 'pen');
+      eye.onclick = () => { put(id, { h: !(lay(id) || [0, 0, 1, false])[3] }); save(); };
+      d.addEventListener('wheel', (e) => { e.preventDefault(); put(id, { s: (lay(id) || [0, 0, 1])[2] * (e.deltaY < 0 ? 1.08 : 1 / 1.08) }); save(); }, { passive: false });
+      let r0 = null, s0 = 1;
+      rs.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; r0 = $(id).getBoundingClientRect(); s0 = (lay(id) || [0, 0, 1])[2]; rs.setPointerCapture(e.pointerId); });
+      rs.addEventListener('pointermove', (e) => { if (r0) put(id, { s: s0 * (e.clientX - r0.left) / r0.width }); });
+      rs.addEventListener('pointerup', () => { if (r0) { r0 = null; save(); } });
     }
   }
-  function resetLayout() { setup.layout = {}; for (const id of WIDGETS) Object.assign($(id).style, { left: '', top: '', right: '', bottom: '', transform: '' }); save(); menu(); }
-  addEventListener('resize', applyLayout);
-  for (const id of WIDGETS) {
-    const el = $(id); let dx = 0, dy = 0, on = false;
-    el.addEventListener('pointerdown', (e) => {
-      if (e.pointerType !== 'mouse' || e.button !== 0 || e.target.closest('button')) return;
-      const r = el.getBoundingClientRect(); dx = e.clientX - r.left; dy = e.clientY - r.top; on = true; el.setPointerCapture(e.pointerId);
-      Object.assign(el.style, { left: r.left + 'px', top: r.top + 'px', right: 'auto', bottom: 'auto', transform: 'none' }); // leave the CSS anchor (centred / bottom) behind
-    });
-    el.addEventListener('pointermove', (e) => { if (!on) return; el.style.left = Math.max(0, Math.min(innerWidth - el.offsetWidth, e.clientX - dx)) + 'px'; el.style.top = Math.max(0, Math.min(innerHeight - el.offsetHeight, e.clientY - dy)) + 'px'; });
-    el.addEventListener('pointerup', (e) => {
-      if (!on) return; on = false; setup.layout[id] = [el.offsetLeft / innerWidth, el.offsetTop / innerHeight]; save(); canvas.focus();
-    });
+  function edSync() { // follow the widgets (they move/scale/appear on their own), until DONE
+    if (!editing) return; requestAnimationFrame(edSync);
+    for (const id of WIDGETS) {
+      const r = $(id).getBoundingClientRect(), { d, eye } = ed[id], off = !!(lay(id) || [0, 0, 1, false])[3];
+      Object.assign(d.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
+      d.classList.toggle('off', off); eye.textContent = off ? '◌' : '◉'; eye.title = off ? 'Show' : 'Hide';
+    }
   }
+  function editLayout() {
+    if (editing || innerWidth <= 760) return; // the small-screen layout has no widgets to arrange
+    if (!ed.timing) edBuild();
+    editing = true; $('hud').classList.add('editing'); $('menu').hidden = true; $('hud').hidden = false;
+    const rel = $('relative'); if (!rel.firstChild) for (const [a, b, g] of [[1, 'KAI', '+2.4 s'], [2, 'VOS', '+1.2 s'], [3, 'YOU', ''], [4, 'RYD', '-0.8 s']]) for (const v of [a, b, g]) { const c = document.createElement('span'); c.textContent = v; if (b === 'YOU') c.className = 'you'; rel.append(c); }
+    applyLayout(); edSync(); (document.activeElement || canvas).blur(); // Esc must reach our keydown, not a focused menu button
+  }
+  function exitEdit() {
+    if (!editing) return; editing = false; $('hud').classList.remove('editing'); const driving = !!t && t.phase !== 'menu'; $('menu').hidden = driving; $('hud').hidden = !driving;
+    save(); menu(); if (t) hud(); applyLayout(); canvas.focus();
+  }
+  $('ovEdit').onclick = editLayout;
   function fullscreen() { if (document.fullscreenElement) document.exitFullscreen(); else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); }
   document.addEventListener('fullscreenchange', menu);
   $('clearBtn').onclick = () => { if (game) game.clearBest(); };
@@ -326,6 +387,7 @@
   $('ovMenu').onclick = () => game.menu();
   $('ovRestart').onclick = start;
   addEventListener('keydown', (e) => {
+    if (editing) { if (e.code === 'Escape') { e.preventDefault(); exitEdit(); } return; } // the game must not see keys while arranging
     if (e.target.closest('button, input, select, summary')) return;
     if (!game || e.code === 'KeyT' || e.ctrlKey || e.metaKey || e.altKey) return; // T is the canvas-only telemetry screen
     if (e.code === 'KeyH') { if (!e.repeat && t && t.phase !== 'menu') { setup.overlay = OVL[(OVL.indexOf(setup.overlay) + 1) % 3]; save(); menu(); hud(); } return; } // overlay mode, not forwarded to the game
@@ -334,7 +396,7 @@
     if (e.code === 'Enter' && (!t || t.phase === 'menu')) { start(); return; }
     if (!e.repeat) game.key(e.code, true);
   });
-  addEventListener('keyup', (e) => { if (game) game.key(e.code, false); });
+  addEventListener('keyup', (e) => { if (game && !editing) game.key(e.code, false); });
   addEventListener('blur', () => { if (game) game.pause(); });
 
   // HUD: redrawn from each telemetry packet (15 a second)
@@ -347,15 +409,16 @@
     const rigWheel = controls.allDevices().find(d => controls.profile.steer && d.key === controls.profile.steer.device);
     $('ovRigResume').hidden = !(t.phase === 'paused' && controls.enabled && controls.ffbAvailable(rigWheel) && ApexRig.mappedInput(controls.profile, controls.allDevices()));
     const p = t.phase, driving = p !== 'menu';
-    const hudWas = $('hud').hidden; $('menu').hidden = driving; $('hud').hidden = !driving; if (driving && hudWas) applyLayout();
-    $('hud').className = 'ov-' + setup.overlay;
+    const hudWas = $('hud').hidden; $('menu').hidden = driving || editing; $('hud').hidden = !(driving || editing); if (driving && hudWas) applyLayout();
+    $('hud').className = 'ov-' + setup.overlay + (editing ? ' editing' : ''); // keep .editing across the 15 Hz rewrite
     const d = t.delta, db = $('deltaFill'), dc = Math.max(-1, Math.min(1, d || 0)); // bar grows left when ahead, right when behind
     db.style.left = (dc < 0 ? 50 + dc * 50 : 50) + '%'; db.style.width = Math.abs(dc) * 50 + '%'; db.style.background = d > 0 ? '#ff3b30' : '#2bd96b';
     $('deltaNum').textContent = d === null ? '—' : (d > 0 ? '+' : '') + d.toFixed(2);
     const cam = CAMS.indexOf(t.camera); if (driving && cam >= 0 && cam !== setup.camera) { setup.camera = cam; save(); menu(); } // C while driving is remembered
     if (!driving) {
       const g = ['LOW', 'MEDIUM', 'HIGH'][t.fxq] + (t.fxAuto ? ' (auto)' : '');
-      $('status').textContent = !t.ready ? 'Loading the car…' : t.fxBusy ? 'Checking graphics speed…' : 'Ready. Press Enter or Go to grid. Graphics: ' + g + ' · ' + t.fps + ' fps';
+      $('status').textContent = t.modelError || (!t.ready ? (t.modelLoading || 'Loading the car…') : t.fxBusy ? 'Checking graphics speed…' : 'Ready. Press Enter or Go to grid. Graphics: ' + g + ' · ' + t.fps + ' fps');
+      $('go').disabled = !t.ready;
       $('go').style.opacity = t.ready ? 1 : 0.5;
       const best = t.bestLap && t.bestLap.charAt(0) !== '-' ? ' · your best ' + t.bestLap : '';
       if ($('trackLine').dataset.base) $('trackLine').textContent = $('trackLine').dataset.base + best;
