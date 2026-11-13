@@ -174,7 +174,8 @@ class Rig:
                 effect.constant.direction.type = 1  # SDL_HAPTIC_CARTESIAN
                 effect.constant.direction.dir[0] = 1
                 effect.constant.length = 120
-                effect.constant.level = math.trunc(level * 32767)
+                # SDL direction is where force comes FROM; convert the game's +right torque.
+                effect.constant.level = math.trunc(-level * 32767)
             else:
                 effect.condition.type = kind
                 effect.condition.length = 120

@@ -71,7 +71,8 @@ function forceLevels(force, options={}) {
 function constantForce(block, force, limit=MAX_FORCE) {
   const data=new Uint8Array(3); data[0]=block;
   const safe=Number.isFinite(force)?Math.max(-1,Math.min(1,force)):0;
-  new DataView(data.buffer).setInt16(1,Math.trunc(safe*unit(limit)*32767),true);
+  // PID direction is where force comes FROM: + magnitude at 9000 pushes left; the game uses +right.
+  new DataView(data.buffer).setInt16(1,Math.trunc(-safe*unit(limit)*32767),true);
   return data;
 }
 function conditionForce(block, level) {

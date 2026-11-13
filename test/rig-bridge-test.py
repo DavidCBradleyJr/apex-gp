@@ -52,9 +52,9 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.rig.snapshot()['devices'][0]['name'], 'MOZA R9')
         self.command()
         self.assertEqual(self.sdl.length, 120)
-        self.assertEqual(self.sdl.level, round(32767 * .2))
-        self.command(-10)
         self.assertEqual(self.sdl.level, -round(32767 * .2))
+        self.command(-10)
+        self.assertEqual(self.sdl.level, round(32767 * .2))
         self.rig.deadline = time.monotonic() - 1
         self.rig.tick()
         self.assertIsNone(self.rig.target)
@@ -65,6 +65,14 @@ class Tests(unittest.TestCase):
         self.command()
         self.rig.command(dict(active=False))
         self.assertIsNone(self.rig.target)
+    def test_restoring_direction(self):
+        for steer in (-.02, .02):
+            self.command(-steer)
+            effect = self.sdl.effects[0].constant
+            self.assertEqual(effect.direction.type, 1)
+            self.assertEqual(list(effect.direction.dir), [1, 0, 0])
+            physical_torque = -effect.level  # SDL direction denotes where force comes FROM.
+            self.assertLess(physical_torque * steer, 0)
     def test_hot_unplug(self):
         self.command()
         self.sdl.ids = []
@@ -121,7 +129,7 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'does not support'):
             self.rig.command(dict(device=1, force=0, damping=.2, active=True))
         self.rig.command(dict(device=1, force=10, outputLimit=10, active=True))
-        self.assertEqual(self.sdl.level, 32767)
+        self.assertEqual(self.sdl.level, -32767)
         self.rig.command(dict(device=1, force=1, outputLimit=0, active=True))
         self.assertIsNone(self.rig.target)
     def test_host_origin(self):

@@ -380,6 +380,7 @@ class RigControls {
     make('p', 'Road texture follows the front tyres: subtle asphalt grain, rhythmic kerbs and rough loose surfaces. This is procedural surface feedback, not scanned pavement.');
     const invertLabel = make('label', 'Reverse FFB direction'), invert = make('input', '', invertLabel); invert.type = 'checkbox'; invert.checked = this.invert;
     invert.onchange = () => { this.invert = invert.checked; this.stop(); saveFeedback(); };
+    make('p', 'Moza R3 normally uses Reverse FFB direction OFF. If you enabled it to compensate for the earlier direction bug, turn it OFF after updating and recheck at low strength.');
     make('p', 'FFB starts off each session. Begin at low strength: the wheel should resist a turn. If it pulls into the turn, disable FFB and reverse its direction. Pause or loss of focus disarms it.');
     const reset = make('button', 'Clear wheel calibration'); reset.type = 'button'; reset.className = 'opt';
     reset.onclick = () => { this.stop(); this.profile = { feedback: this.profile.feedback }; this.save(); signature = ''; refresh(); };

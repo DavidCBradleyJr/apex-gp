@@ -28,8 +28,19 @@ class FakeDevice {
   assert.equal(effect[11],0);assert.equal(effect[12],4);assert.equal(effect[10],255);
   assert.equal(new DataView(effect.buffer).getUint16(13,true),9000);
   assert.equal(DURATION,120);
-  for(const [force,expected] of [[10,Math.trunc(32767*MAX_FORCE)],[-10,-Math.trunc(32767*MAX_FORCE)],[NaN,0],[Infinity,0],[0,0]])assert.equal(new DataView(constantForce(2,force).buffer).getInt16(1,true),expected);
-  assert.equal(new DataView(constantForce(2,1,1).buffer).getInt16(1,true),32767,'explicit full-range limit');
+  for(const [force,expected] of [[10,-Math.trunc(32767*MAX_FORCE)],[-10,Math.trunc(32767*MAX_FORCE)],[NaN,0],[Infinity,0],[0,0]])assert.equal(new DataView(constantForce(2,force).buffer).getInt16(1,true),expected);
+  assert.equal(new DataView(constantForce(2,1,1).buffer).getInt16(1,true),-32767,'explicit full-range limit');
+  global.THREE=require('../vendor/three.min.js');
+  const {Sim,buildTrack}=require('../src/game.js'),{feedbackForce}=require('../src/rig.js'),track=buildTrack();
+  for(const steer of [-.02,.02]){
+    const sim=new Sim(track);sim.psi=0;sim.vx=30;
+    for(let i=0;i<10;i++)sim.step(1/240,{wheel:true,analog:true,steer,throttle:0,brake:0});
+    const requested=feedbackForce({...sim,roadFeedback:0},0);
+    const magnitude=new DataView(constantForce(2,requested).buffer).getInt16(1,true);
+    // A force FROM +X (9000) exerts torque towards -X, the opposite sign of its magnitude.
+    const physicalTorque=-magnitude;
+    assert(physicalTorque*steer<0,'small steering deflections must be opposed at the motor, in both directions');
+  }
   assert.equal(new DataView(constantForce(2,1,NaN).buffer).getInt16(1,true),0);
   const condition=new DataView(conditionForce(3,0.25).buffer);
   for(const offset of [4,6,8,10])assert.equal(condition.getUint16(offset,true),Math.trunc(.25*32767));
@@ -54,7 +65,7 @@ class FakeDevice {
   assert(!hid.matches(pads[0],[...pads,{...pads[0],key:'second-r3'}]),'ambiguous identical wheels cannot receive torque');
   await hid.write(0.25);
   const force=device.calls.filter(c=>c.kind==='out'&&c.id===5).at(-1);
-  assert.equal(new DataView(Uint8Array.from(force.data).buffer).getInt16(1,true),Math.round(32767*0.2*0.25));
+  assert.equal(new DataView(Uint8Array.from(force.data).buffer).getInt16(1,true),-Math.round(32767*0.2*0.25));
   assert.deepEqual(device.calls.filter(c=>c.id===10&&c.data[0]===2).at(-1).data,[2,1,1],'one finite play only');
   await hid.write(0,{outputLimit:.8,damping:.2,friction:.1});
   assert(hid.playing,'conditions work at zero steering torque');
@@ -71,7 +82,7 @@ class FakeDevice {
   controls.profile={steer:{device:'r3',axis:0,left:-1,center:0,right:1},throttle:{device:'r3',axis:2,rest:-1,full:1},brake:{device:'r3',axis:5,rest:-1,full:1}};
   controls.strength=0.25;controls.ffb=true;controls.feedback({aligningTorque:-100000},true);await hid.busy;
   assert.equal(controls.force,-0.25);
-  assert.equal(new DataView(Uint8Array.from(device.calls.filter(c=>c.id===5).at(-1).data).buffer).getInt16(1,true),-Math.round(32767*0.2*0.25));
+  assert.equal(new DataView(Uint8Array.from(device.calls.filter(c=>c.id===5).at(-1).data).buffer).getInt16(1,true),Math.round(32767*0.2*0.25));
   controls.wizard=new RigWizard();controls.feedback({aligningTorque:1000},true);await hid.busy;
   assert.equal(controls.force,0);controls.wizard=null;
   await hid.stop();assert.equal(hid.playing,false);
