@@ -9,7 +9,10 @@
 <script src="./vendor/Sky.js"></script>
 <script src="./vendor/postfx.js"></script>
 <script src="./vendor/car.js"></script>
-<script src="./game.js?v=v12-recording-1"></script>
+<script src="./vendor/f1-cars.js"></script>
+<script src="./vendor/monza-tree.js"></script>
+<script src="./vendor/driver-hands.js"></script>
+<script src="./game.js?v=ferrari-pov-2"></script>
 <script src="./overlay.js"></script>
 </head>
 <body>
@@ -38,7 +41,7 @@ a{color:#ff8a4c}a:hover{color:#ffb38a}
 <div style="font-size: 15px; color: #c3c9d1">{{ trackLine }}</div>
 </div>
 
-<button class="agp-btn" type="button" onClick="{{ start }}" style="min-height: 52px; border: 0; border-radius: 12px; background: {{ accent }}; color: #120800; font: 800 22px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">GO TO GRID ›</button>
+<button class="agp-btn" type="button" onClick="{{ start }}" aria-disabled="{{ startDisabled }}" style="min-height: 52px; border: 0; border-radius: 12px; background: {{ accent }}; color: #120800; font: 800 22px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">GO TO GRID ›</button>
 <div style="font-size: 12px; color: #9aa3ad">{{ status }}</div>
 <div style="display: flex; flex-direction: column; gap: 10px; padding: 16px; background: rgba(16,18,23,0.86); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px">
 <div class="agp-num" style="font-size: 14px; letter-spacing: 0.24em; color: #9aa3ad; font-weight: 700">SESSION</div>
@@ -263,7 +266,7 @@ a{color:#ff8a4c}a:hover{color:#ffb38a}
 </sc-for>
 </div>
 <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
-<button class="agp-btn" type="button" onClick="{{ start }}" style="min-height: 48px; border: 0; border-radius: 10px; background: {{ accent }}; color: #120800; font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">RACE AGAIN</button>
+<button class="agp-btn" type="button" onClick="{{ start }}" aria-disabled="{{ startDisabled }}" style="min-height: 48px; border: 0; border-radius: 10px; background: {{ accent }}; color: #120800; font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">RACE AGAIN</button>
 <button class="agp-btn" type="button" onClick="{{ toMenu }}" style="min-height: 48px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: transparent; color: #f3f4f6; font: 700 18px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; cursor: pointer">BACK TO GARAGE</button>
 </div>
 </div>
@@ -352,7 +355,7 @@ const OVL = ['inputs', 'full', 'off'];
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { t: null, setup: { compound: 'soft', frontWing: 6, rearWing: 6, brakeBias: 57, tc: true, abs: true, autoGear: true, time: 'afternoon', line: 'full', ghost: true, mode: 'tt', laps: 3, skill: 'pro', track: 'kestrel', camera: 0, engineEra: 'v6' }, map: null, error: '', ovl: this.loadOvl() };
+    this.state = { t: null, setup: { compound: 'soft', frontWing: 6, rearWing: 6, brakeBias: 57, tc: true, abs: true, autoGear: true, time: 'afternoon', line: 'full', ghost: true, mode: 'tt', laps: 3, skill: 'pro', track: 'kestrel', team: 'apex', camera: 0, engineEra: 'v6' }, map: null, error: '', ovl: this.loadOvl() };
     this.game = null; this.root = null; this.mapOn = false;
     this.toggleMap = () => { this.mapOn = !this.mapOn; if (this.game) this.game.overview(this.mapOn, 0.16); this.forceUpdate ? this.forceUpdate() : this.setState({}); };
     this.setRoot = (el) => { this.root = el; };
@@ -365,7 +368,7 @@ class Component extends DCLogic {
     this.load = (track) => {
       if (this.game) { this.game.destroy(); this.game = null; }
       try {
-        this.game = window.ApexGP.create(this.canvas, { track, onTelemetry: (t) => this.setState({ t }) });
+        this.game = window.ApexGP.create(this.canvas, { track, team: this.state.setup.team, onTelemetry: (t) => this.setState({ t }) });
         this.game.overview(this.mapOn, 0.16);
         this.setState({ t: null, map: this.buildMap(this.game.track) });
       } catch (e) { this.setState({ error: 'WebGL unavailable: ' + e.message }); }
@@ -374,6 +377,12 @@ class Component extends DCLogic {
       const ids = window.ApexGP.TRACKS.map(t => t.id), track = ids[(ids.indexOf(this.state.setup.track) + 1) % ids.length];
       this.mapOn = true; // a new circuit opens on its 3D map
       this.setState({ setup: Object.assign({}, this.state.setup, { track }) }); this.load(track);
+    };
+    this.nextTeam = () => {
+      if (!this.game) return;
+      const teams = window.ApexGP.TEAMS, id = teams[(teams.findIndex(t => t[0] === this.state.setup.team) + 1) % teams.length][0];
+      this.mapOn = false; this.game.team(id); this.game.overview(false, 0.16);
+      this.setState({ setup: Object.assign({}, this.state.setup, { team: id }), t: null });
     };
     this.onKeyDown = (e) => {
       if (!this.game) return;
@@ -410,7 +419,7 @@ class Component extends DCLogic {
     };
     this.onKeyUp = (e) => { if (this.game) this.game.key(e.code, false); };
     this.start = () => {
-      if (!this.game) return;
+      if (!this.game || !this.state.t || !this.state.t.ready) return;
       const s = this.state.setup;
       this.game.begin(Object.assign({}, s, { time: s.time === 'golden' ? 7 : 38 }));
       this.game.camera(s.camera);
@@ -509,7 +518,7 @@ class Component extends DCLogic {
     const raceOpts = [{ label: 'Race length', state: setup.laps + ' LAPS', flip: cyc('laps', [3, 5, 10]) }, { label: 'AI skill', state: setup.skill.toUpperCase(), flip: cyc('skill', ['rookie', 'pro', 'elite']) }];
     const tr = this.game ? this.game.track : null, def = window.ApexGP ? window.ApexGP.trackDef(setup.track) : { name: '', note: '' };
     const CAM_LABEL = ['CHASE', 'T-CAM', 'COCKPIT'];
-    const sessionOpts = [{ label: 'Circuit', state: (def.short || def.name.replace(/ (Circuit|Autodrome)$/, '')).toUpperCase() + ' ›', flip: this.nextTrack }, { label: 'View', state: CAM_LABEL[setup.camera], flip: cyc('camera', [0, 1, 2]) }, { label: 'Menu shows', state: this.mapOn ? 'CIRCUIT MAP' : 'THE CAR', flip: this.toggleMap }];
+    const sessionOpts = [{ label: 'Team', state: (window.ApexGP ? window.ApexGP.teamDef(setup.team)[1] : 'Apex GP').toUpperCase() + ' ›', flip: this.nextTeam }, { label: 'Circuit', state: (def.short || def.name.replace(/ (Circuit|Autodrome)$/, '')).toUpperCase() + ' ›', flip: this.nextTrack }, { label: 'View', state: CAM_LABEL[setup.camera], flip: cyc('camera', [0, 1, 2]) }, { label: 'Menu shows', state: this.mapOn ? 'CIRCUIT MAP' : 'THE CAR', flip: this.toggleMap }];
     const trackLine = tr ? tr.name + ' · ' + (tr.L / 1000).toFixed(3) + ' km · ' + tr.turns + ' turns' : '';
     const hueCol = (h) => 'hsl(' + ((22 + h) % 360) + ' 85% 60%)';
     const raceBest = race ? race.cars.reduce((m, c) => c.best && c.best < m ? c.best : m, '9') : '';
@@ -556,7 +565,7 @@ class Component extends DCLogic {
       modes, isRaceSetup, raceOpts, sessionOpts, trackLine, trackNote: def.note + '. On the map: sectors in red, blue and yellow, DRS zones in green. C changes view while driving.', isRace: !!race, tower, mapDots, isFinished: phase === 'finished' && !!race,
       modeLine: (isRaceSetup ? 'RACE · ' + setup.laps + ' LAPS · 6 CARS' : 'TIME TRIAL') + ' · DRY · 26°C',
       resultTitle: race ? 'P' + race.pos + ' OF ' + race.n : '', resultLaps: race ? race.laps + ' LAPS' : '', isLights: phase === 'lights', isPaused: phase === 'paused',
-      status: this.state.error || (this.game ? 'Circuit loaded. Press Enter or Go to grid.' : 'Loading circuit…'),
+      status: this.state.error || t.modelError || (!t.ready ? (t.modelLoading || 'Loading the car…') : 'Circuit loaded. Press Enter or Go to grid.'), startDisabled: !t.ready,
       hasLaps: laps.length > 0, laps, hasSession: laps.length > 0 || hasBest, isTel: !!tel, tel: tel || {}, showPause: phase === 'paused' && !tel,
       openTel: this.openTel, closeTel: this.closeTel, clearBest: this.clearBest,
       controls: [

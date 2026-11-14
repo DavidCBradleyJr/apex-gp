@@ -36,7 +36,7 @@ function mappedInput(profile, devices) {
 }
 
 const WIZARD_STEPS = [
-  ['steer', 'prepare', 'Center your wheel', 'Center the wheel and release both pedals. Keep other controls still, then start listening.'],
+  ['steer', 'prepare', 'Center your wheel', 'Set your wheelbase to 360° total rotation (180° left and right) in its setup software, then center the wheel and release both pedals. Keep other controls still, then start listening.'],
   ['steer', 'left', 'Turn fully left', 'Turn the wheel fully left and hold it. We will find its axis automatically.'],
   ['steer', 'right', 'Turn fully right', 'Turn the same wheel fully right and hold it to capture the other end of its range.'],
   ['steer', 'center', 'Return to center', 'Center the physical wheel, then confirm its neutral position.'],

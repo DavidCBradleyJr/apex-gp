@@ -32,6 +32,8 @@
   .engine-sound { display: grid; gap: 6px; font-size: 13px; }
   #engineEra { box-sizing: border-box; width: 100%; min-height: 44px; padding: 8px; background: #12151b; color: var(--text); border: 1px solid var(--line); border-radius: 10px; font: inherit; }
   #engineEra:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #volume { box-sizing: border-box; width: 100%; min-height: 44px; accent-color: var(--accent); }
+  #volume:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   #rigControls { display: grid; gap: 12px; margin-top: 12px; }
   #rigControls label { display: grid; gap: 6px; font-size: 13px; }
@@ -175,6 +177,10 @@
         <select id="engineEra" aria-describedby="engineNote"></select>
       </label>
       <div class="note" id="engineNote"></div>
+      <label class="engine-sound" for="volume">Volume
+        <input type="range" id="volume" min="0" max="100" step="1" value="100" aria-describedby="volumeVal">
+      </label>
+      <div class="note" id="volumeVal">100%</div>
       <div class="note"><a href="audio/credits.html" target="_blank" rel="noopener" style="color:inherit">V12 recording credits · Pe</a></div>
       <div class="label">DISPLAY</div>
       <div class="opts" id="dispOpts"></div>
@@ -253,9 +259,11 @@
 <script src="vendor/postfx.js"></script>
 <script src="vendor/car.js"></script>
 <script src="vendor/f1-cars.js"></script>
+<script src="vendor/monza-tree.js"></script>
+<script src="vendor/driver-hands.js"></script>
 <!-- bump this version on every script tag below whenever game.js, rig.js, webhid-ffb.js or overlay.js change: browsers keep the old files otherwise. -->
-<script src="game.js?v=ffb-memory-2"></script>
-<script src="webhid-ffb.js?v=ffb-memory-2"></script>
+<script src="game.js?v=ferrari-pov-2"></script>
+<script src="webhid-ffb.js?v=ferrari-pov-2"></script>
 <dialog class="rig-ask" id="rigAsk" aria-labelledby="rigAskTitle">
   <h2 id="rigAskTitle">Using a sim rig?</h2>
   <p>Set up a steering wheel and pedals, with optional force feedback. Takes about a minute.</p>
@@ -267,20 +275,21 @@
   <div class="rig-dlg-head"><h2 id="rigDlgTitle">SIM RIG</h2><button type="button" class="rig-x" id="rigClose" aria-label="Close sim rig setup">&#x2715;</button></div>
   <div id="rigControls" class="rig-body"></div>
 </dialog>
-<script src="rig.js?v=ffb-memory-2"></script>
-<script src="overlay.js?v=ffb-memory-2"></script>
+<script src="rig.js?v=ferrari-pov-2"></script>
+<script src="overlay.js?v=ferrari-pov-2"></script>
 <script>
 // Standalone page for the engine (GitHub Pages build). The Claude Design canvas in design/project is the richer UI:
 // it adds wing and brake-bias sliders and the lap telemetry screen.
 (function () {
   const $ = (id) => document.getElementById(id), canvas = $('c'), A = window.ApexGP;
   if (!A || !window.THREE) { $('status').textContent = 'The 3D engine did not load. Reload the page.'; return; }
-  const setup = { track: 'kestrel', team: 'apex', camera: 0, mode: 'tt', laps: 3, skill: 'pro', compound: 'soft', tc: true, abs: true, autoGear: true, line: 'full', ghost: true, time: 'afternoon', gfx: 'auto', units: 'kmh', map: true, engineEra: 'v6', overlay: 'inputs', layout: {} };
+  const setup = { track: 'kestrel', team: 'apex', camera: 0, mode: 'tt', laps: 3, skill: 'pro', compound: 'soft', tc: true, abs: true, autoGear: true, line: 'full', ghost: true, time: 'afternoon', gfx: 'auto', units: 'kmh', map: true, engineEra: 'v6', volume: 1, overlay: 'inputs', layout: {} };
   // settings are remembered between visits
   const KEY = 'apexgp.settings.v1';
   try { const o = JSON.parse(localStorage.getItem(KEY) || '{}'); for (const k in setup) if (typeof o[k] === typeof setup[k]) setup[k] = o[k]; } catch (e) { /* first visit or storage blocked */ }
   if (!A.TRACKS.some(x => x.id === setup.track)) setup.track = 'kestrel';
   if (!A.ENGINE_ERAS.some(x => x.id === setup.engineEra)) setup.engineEra = 'v6';
+  if (!Number.isFinite(setup.volume) || setup.volume < 0 || setup.volume > 1) setup.volume = 1; // old/corrupt saves fall back to full volume
   if (!['inputs', 'full', 'off'].includes(setup.overlay)) setup.overlay = 'inputs';
   if (!setup.layout || typeof setup.layout !== 'object' || Array.isArray(setup.layout)) setup.layout = {};
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(setup)); } catch (e) { /* storage blocked */ } };
@@ -299,11 +308,14 @@
   let game = null, map = null, t = null;
   for (const era of A.ENGINE_ERAS) $('engineEra').append(new Option(era.label, era.id));
   $('engineEra').onchange = () => { setup.engineEra = $('engineEra').value; save(); menu(); };
+  const volumeVal = () => { $('volumeVal').textContent = Math.round(setup.volume * 100) + '%'; };
+  $('volume').value = Math.round(setup.volume * 100); volumeVal();
+  $('volume').oninput = () => { setup.volume = Math.min(1, Math.max(0, $('volume').value / 100)); volumeVal(); if (game) game.volume(setup.volume); save(); };
 
   function load() {
     if (game) game.destroy();
     t = null;
-    try { game = A.create(canvas, { controls, track: setup.track, team: setup.team, quality: setup.gfx === 'auto' ? 'auto' : +setup.gfx, setup: { units: setup.units, engineEra: setup.engineEra }, onTelemetry: (tel) => { t = tel; hud(); } }); }
+    try { game = A.create(canvas, { controls, track: setup.track, team: setup.team, quality: setup.gfx === 'auto' ? 'auto' : +setup.gfx, setup: { units: setup.units, engineEra: setup.engineEra, volume: setup.volume }, onTelemetry: (tel) => { t = tel; hud(); } }); }
     catch (e) { $('status').textContent = 'WebGL unavailable: ' + e.message; return; }
     const tr = game.track; let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (let i = 0; i < tr.N; i++) { x0 = Math.min(x0, tr.px[i]); x1 = Math.max(x1, tr.px[i]); z0 = Math.min(z0, tr.pz[i]); z1 = Math.max(z1, tr.pz[i]); }
@@ -331,6 +343,7 @@
     const def = A.trackDef(setup.track), race = setup.mode === 'race', on = (v) => v ? 'ON' : 'OFF';
     $('engineEra').value = setup.engineEra;
     $('engineNote').textContent = A.ENGINE_ERAS.find(x => x.id === setup.engineEra).note + ' Sound only; car performance stays the same.';
+    $('volume').value = Math.round(setup.volume * 100); volumeVal();
     const session = [['Circuit', (def.short || def.name.replace(/ (Circuit|Autodrome)$/, '')).toUpperCase() + ' ›', cyc('track', A.TRACKS.map(x => x.id))], ['View', CAMS[setup.camera], cyc('camera', [0, 1, 2])],
       ['Session', race ? 'RACE' : 'TIME TRIAL', cyc('mode', ['tt', 'race'])]];
     if (race) session.push(['Race length', setup.laps + ' LAPS', cyc('laps', [3, 5, 10])], ['AI skill', setup.skill.toUpperCase(), cyc('skill', ['rookie', 'pro', 'elite'])]);

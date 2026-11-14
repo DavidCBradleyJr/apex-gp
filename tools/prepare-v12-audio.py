@@ -25,10 +25,13 @@ def main():
         samples.byteswap()
     OUT.mkdir(exist_ok=True)
     loops = []
-    for name, start, end, rpm in [('mid', 2.65, 2.95, 11000), ('high', 3.75, 4.01, 14000)]:
+    # Cycles are the most that fit each segment including the 16-cycle crossfade tail (the
+    # 'source segment exhausted' assert guards the fit); longer loops hide the seam periodicity.
+    # Keep the original windows: widening them drifts the slope=147 pitch fit, warbling the seam.
+    for name, start, end, rpm, cycles in [('mid', 2.65, 2.95, 11000, 142), ('high', 3.75, 4.01, 14000, 162)]:
         # Apparent bank pitch fitted to the rising harmonics; these are not tachometer RPMs.
         slope, initial = 147, 117 + 147 * start
-        cycles, overlap_cycles = 128, 16
+        overlap_cycles = 16
         n = round(cycles * RATE / (rpm / 20))
         overlap = round(overlap_cycles * n / cycles)
         hz = cycles * RATE / n
@@ -69,7 +72,7 @@ def main():
         'license': 'Creative Commons Attribution (YouTube)',
         'licenseUrl': 'https://www.youtube.com/t/creative_commons',
         'sourceAudioSha256': hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
-        'changes': 'Mono 48 kHz; 240 Hz high-pass/8500 Hz low-pass; resampled to stabilize rising bank pitch; 128-cycle loops with 16-cycle seam crossfades; DC removed; peak normalized to 0.8; PCM16.',
+        'changes': 'Mono 48 kHz; 240 Hz high-pass/8500 Hz low-pass; resampled to stabilize rising bank pitch; 142/162-cycle loops with 16-cycle seam crossfades; DC removed; peak normalized to 0.8; PCM16.',
         'limit': 'Apparent RPM inferred from bank harmonics includes Doppler. No tachometer calibration, isolated intake/exhaust, idle or off-throttle recording. Game uses synthesis below the sampled range and when coasting.',
         'loops': loops,
     }

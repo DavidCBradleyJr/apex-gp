@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Apex GP — mixed-team GPU check</title>
+<style>html,body{margin:0;background:#111;color:white;font:13px system-ui}canvas{width:100vw;height:100vh;display:block}aside{position:fixed;left:12px;top:12px;background:#111d;padding:12px;max-width:480px}pre{max-height:50vh;overflow:auto;white-space:pre-wrap}</style>
+<canvas></canvas><aside><b>Mixed-team running-race check</b><p>Automatic test input. Audio muted. No wheel feedback output.</p><pre id="report">Loading six distinct team cars…</pre></aside>
+<script src="../vendor/three.min.js"></script><script src="../vendor/GLTFLoader.js"></script><script src="../vendor/Sky.js"></script><script src="../vendor/postfx.js"></script><script src="../vendor/car.js"></script><script src="../vendor/f1-cars.js"></script><script src="../vendor/monza-tree.js"></script><script src="../vendor/driver-hands.js"></script><script src="../src/game.js"></script>
+<script>
+(async () => {
+  const out = document.getElementById('report'), errors = []; let game, telemetry, readyAt = 0, previous = 0; const intervals = [], visibility = new Set();
+  addEventListener('error', e => errors.push(e.message));
+  // This input fixture follows the physics racing line; feedback/silence are deliberately empty.
+  const controls = { read() { return game ? ApexGP.autopilot(game.sim) : null; }, feedback() {}, silence() {} };
+  game = ApexGP.create(document.querySelector('canvas'), { team: 'ferrari', quality: 2, controls, onTelemetry(t) { telemetry = t; } });
+  game.mute(true); game.begin({ mode: 'race', laps: 3 }); game.camera(0);
+  const deadline = performance.now() + 45000;
+  while (!(telemetry && telemetry.ready && telemetry.race)) { if (performance.now() > deadline) throw Error(telemetry?.modelError || 'Models did not become ready'); await new Promise(requestAnimationFrame); }
+  game.state.phase = 'run'; readyAt = performance.now();
+  while (performance.now() - readyAt < 8000) {
+    const now = await new Promise(requestAnimationFrame); visibility.add(document.visibilityState);
+    if (now - readyAt > 2000 && previous) intervals.push(now - previous);
+    previous = now; out.textContent = 'Running mixed-team race… ' + Math.round(Math.max(0, 8000 - (now - readyAt)) / 1000) + ' seconds';
+  }
+  game.pause(); const gl = game.renderer.getContext(), debug = gl.getExtension('WEBGL_debug_renderer_info');
+  const renderer = gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER), sorted = intervals.slice().sort((a,b) => a-b), elapsed = intervals.reduce((a,b) => a+b, 0);
+  const field = game.race.cars.map(c => ({ code: c.code, team: c.team, model: (c.ai ? game.scene.getObjectByName('opponent-' + c.code) : game.scene.getObjectByName('player-car')).children[0]?.userData.modelTeam }));
+  if (field.some(c => c.team !== c.model)) errors.push('Mixed field model mismatch');
+  const real = !/swiftshader|llvmpipe|software/i.test(renderer) && visibility.size === 1 && visibility.has('visible') && intervals.length >= 60;
+  const report = { status: errors.length ? 'FAIL' : real ? 'Measured visible real-GPU mixed-team race' : 'Observed sample; real-GPU qualification remains open', renderer, quality: telemetry.fxq,
+    drawingBuffer: [gl.drawingBufferWidth, gl.drawingBufferHeight], field, samples: intervals.length, visibility: [...visibility],
+    meanFrameIntervalMs: elapsed / intervals.length, observedFps: intervals.length * 1000 / elapsed, p95FrameIntervalMs: sorted[Math.floor(sorted.length * .95)],
+    renderCounts: { ...game.renderer.info.render }, resourceCounts: { ...game.renderer.info.memory }, errors,
+    limits: ['One eight-second run with six distinct exteriors after load; frame intervals include CPU/browser work.', 'renderCounts describe only the last render/postprocessing pass, not total scene draws or triangles.', 'Texture count is a renderer counter, not measured VRAM bytes. Team art, active aero and accurate team POV remain unqualified.'] };
+  window.teamGpuReport = report; document.body.dataset.check = errors.length ? 'fail' : real ? 'pass' : 'partial'; out.textContent = JSON.stringify(report, null, 2);
+})().catch(error => { document.body.dataset.check = 'fail'; document.getElementById('report').textContent = 'FAIL: ' + error.message; });
+</script></html>

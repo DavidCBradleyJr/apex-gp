@@ -18,16 +18,23 @@
 <script src="../vendor/Sky.js"></script>
 <script src="../vendor/postfx.js"></script>
 <script src="../vendor/car.js"></script>
-<script src="game.js"></script>
+<script src="../vendor/f1-cars.js"></script>
+<script src="../vendor/monza-tree.js"></script>
+<script src="../vendor/driver-hands.js"></script>
+<script src="game.js?v=ferrari-pov-2"></script>
 <script>
   addEventListener('error', e => console.log('ERR', e.message, e.filename, e.lineno));
   // Plain local harness for the engine; the real UI lives in the Claude Design canvas (design/project/Main.dc.html).
   const q = new URLSearchParams(location.search), c = document.getElementById('c'), hud = document.getElementById('hud');
-  const game = ApexGP.create(c, { track: q.get('track'), team: q.get('team'), onTelemetry: t => { if (q.has('log')) console.log('TEL', t.phase, t.speed, t.rpm, t.gear, t.mapX, t.mapZ); hud.textContent = `${t.phase}  ${t.speed} km/h  G${t.gear}  ${t.rpm} rpm  lap ${t.lap} ${t.lapTime}  best ${t.bestLap}  ${t.message}`; } });
+  let latestTelemetry = null;
+  const game = ApexGP.create(c, { track: q.get('track'), team: q.get('team'), quality: q.has('quality') ? +q.get('quality') : 'auto', onTelemetry: t => { latestTelemetry = t; if (q.has('log')) console.log('TEL', t.phase, t.speed, t.rpm, t.gear, t.mapX, t.mapZ); hud.textContent = `${t.phase}  ${t.speed} km/h  G${t.gear}  ${t.rpm} rpm  lap ${t.lap} ${t.lapTime}  best ${t.bestLap}  ${t.fps} fps  ${t.message}`; } });
   // ?pose=steer → parked with wheels on lock (menu orbit); ?pose=brake → 300 km/h approaching T1 with the racing line
-  if (q.get('pose') === 'steer') { game.begin({}); Object.assign(game.state, { phase: 'paused', camMode: +(q.get('cam') || 2) }); game.sim.roadAngle = 0.3; }
+  const previewSetup = { time: q.has('time') ? +q.get('time') : 38, wet: q.get('wet') === '1' };
+  if (q.get('pose') === 'steer') { game.begin(previewSetup); Object.assign(game.state, { phase: 'paused', camMode: +(q.get('cam') || 2) }); if (q.has('s')) game.sim.placeAt(+q.get('s'), 0); game.sim.roadAngle = q.has('d') ? +q.get('d') : 0.3; }
+  if (q.get('line') === 'off') game.state.lineMode = 0;
+  if (q.has('check')) { const s = document.createElement('script'); s.src = q.get('check')==='ferrari-pov' ? '../test/ferrari-pov-scene-check.js' : q.get('check')==='driver' ? '../test/driver-pov-scene-check.js' : '../test/monza-scene-check.js'; document.body.append(s); }
   if (q.get('pose') === 'orbit') game.sim.roadAngle = +(q.get('d') || 0.45);
-  if (q.get('pose') === 'brake') { game.begin({}); Object.assign(game.state, { phase: 'run', armed: false }); game.sim.placeAt(+(q.get("s") || 900), 1); game.sim.vx = 85 * Math.cos(game.sim.psi); game.sim.vz = 85 * Math.sin(game.sim.psi); game.sim.gear = 8; }
+  if (q.get('pose') === 'brake') { game.begin(previewSetup); Object.assign(game.state, { phase: 'run', armed: false }); game.sim.placeAt(+(q.get("s") || 900), 1); game.sim.vx = 85 * Math.cos(game.sim.psi); game.sim.vz = 85 * Math.sin(game.sim.psi); game.sim.gear = 8; }
   addEventListener('keydown', e => { if (e.code === 'Enter') game.begin({}); game.key(e.code, true); });
   addEventListener('keyup', e => game.key(e.code, false));
   if (q.has('drive')) { game.begin({}); setTimeout(() => game.key('ArrowUp', true), +(q.get('t') || 5500)); if (q.get('cam')) game.camera(+q.get('cam')); if (q.get('steer')) setTimeout(() => game.key('ArrowRight', true), +q.get('steer')); }

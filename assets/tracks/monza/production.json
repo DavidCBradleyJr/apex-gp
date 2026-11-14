@@ -1,0 +1,103 @@
+{
+  "date": "2026-11-12",
+  "track": "monza",
+  "scope": "driver-visible circuit scenery, cockpit and exterior cameras",
+  "references": [
+    {
+      "role": "pit architecture, grid, barriers, grandstands, woodland",
+      "page": "https://www.gb-3.net/news/2024/aug/22/gb3-championship-reveals-f1focused-2025-calendar-with-monza-finale",
+      "image": "https://images.msv.com/high-res/59e17521-88b4-490b-8c53-142df380ca2c/main.jpg",
+      "file": "source/pit-straight-msv.jpg",
+      "use": "visual reference only, not a game texture; not copied to docs/vendor",
+      "sha256": "3ce0bba228b2d3b4df07705f6c8c7dcfb90ac40e98dd639c6978d67810ff30b2"
+    },
+    {
+      "role": "driving sightlines, surface, fences, sponsorship",
+      "page": "https://www.youtube.com/watch?v=wgZdpFRpZCs",
+      "title": "The Fastest Lap In F1 History: Max Verstappen\u2019s Pole Lap | 2025 Italian Grand Prix | Pirelli",
+      "owner": "FORMULA 1",
+      "use": "inspected in browser; video not redistributed"
+    },
+    {
+      "role": "circuit and corner identities",
+      "page": "https://www.monzanet.it/en/circuit/"
+    },
+    {
+      "role": "track choice",
+      "page": "https://www.formula1.com/en/latest/article/new-global-fan-survey-reveals-f1s-most-popular-team-and-driver.2evqTWEPsWYeBlw9vmSyBs",
+      "note": "2021 survey, not a current ranking"
+    }
+  ],
+  "jobs": [
+    {
+      "provider": "Tripo Studio browser",
+      "task_id": "b4eceda4-3f49-49b2-988c-c03af6e6fd02",
+      "url": "https://studio.tripo3d.ai/workspace/generate/b4eceda4-3f49-49b2-988c-c03af6e6fd02",
+      "input_role": "text-to-model; no reference image uploaded",
+      "prompt": "One mature European hornbeam tree from the Royal Park of Monza, Italy. Photorealistic summer deciduous tree, 16 metres tall, single grey-brown branching trunk, clear lower trunk 4 metres, irregular spreading airy crown of many small olive green leaves, visible fine branches, natural asymmetry. Complete isolated tree from roots to crown. No ground, no pot, no pedestal, no people or buildings. Realistic PBR bark and foliage, neutral diffuse lighting. Game environment asset seen at roadside from a racing cockpit.",
+      "model": "H3.1",
+      "privacy": "Private",
+      "generate_parts": false,
+      "8k_texture": false,
+      "approved_credits": 30,
+      "quoted_credits": 30,
+      "observed_wallet_before": 23920,
+      "observed_wallet_after": 23890,
+      "actual_credits_by_wallet_delta": 30,
+      "status": "completed and exported",
+      "file": "source/hornbeam.glb",
+      "triangles": 48721,
+      "vertices": 24187,
+      "source_materials": 1,
+      "source_images": 0,
+      "note": "Studio showed Geometry & Texture, but exported GLB has no texture maps. Do not claim textured output. No paid retries, texture or retopology jobs submitted.",
+      "sha256": "4ee61ab8132fda7095894fab39d2d75798003b16f088388e0af1bd78542d913c"
+    }
+  ],
+  "derivatives": [
+    {
+      "file": "hornbeam-runtime.glb",
+      "source": "source/hornbeam.glb",
+      "recipe": "tools/prepare-monza-tree.py",
+      "triangles": 5999,
+      "colour": "local vertex colours, not generated PBR maps",
+      "integration": "vendor/monza-tree.js; runtime leaf sprays and crossed woodland impostors in src/game.js",
+      "sha256": "96c4dcbabf73e210b1a657e6ff9fbc89ad765733c1fbf0056ba3ca0ffad742e7"
+    }
+  ],
+  "limitations": [
+    "Existing flat OSM-derived centreline retained; no LiDAR or surveyed elevation/width data.",
+    "Architecture, dimensions, bridge locations and sponsor placements are visual approximations.",
+    "One generated tree source, with local colour and leaf sprays; botanical variety remains limited.",
+    "Off-track buildings have visual geometry only; gameplay collision remains the circuit barrier.",
+    "Physical wheel feel and real-GPU performance are not established by screenshots."
+  ],
+  "checks": {
+    "status": "passed",
+    "commands": [
+      "node test/monza-test.js",
+      "node test/sim-test.js",
+      "node test/race-test.js",
+      "node --check src/game.js",
+      "git diff --check"
+    ],
+    "browser": {
+      "device": "NVIDIA RTX 3090 Ti / ANGLE",
+      "high_tree_instances": 271,
+      "low_tree_instances": 137,
+      "tree_groups": 16,
+      "road_clearance_probes": 435,
+      "visible_gravel_probes": 3,
+      "views": [
+        "pit straight cockpit",
+        "Rettifilo cockpit",
+        "Serraglio cockpit and chase",
+        "Ascari chase",
+        "Parabolica chase"
+      ],
+      "limits": "posed checks only; no sustained frame-time benchmark",
+      "performance_note": "Automated HUD FPS was unstable, including the unchanged Kestrel baseline. Added spatial woodland culling and leaf/shadow distance limits; no controlled sustained frame-time benchmark."
+    },
+    "delivery": "local build in docs/ and Design copies; not publicly deployed"
+  }
+}

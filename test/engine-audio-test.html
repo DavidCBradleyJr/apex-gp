@@ -11,7 +11,7 @@
 (async () => {
   const check = (ok, message) => { if (!ok) throw Error(message); }, lines = [];
   const { EngineAudio, ENGINE_ERAS, CAR } = ApexGP, rate = 48000;
-  const state = id => ({ setup:{engineEra:id}, gear:5, rpm:12000, thr:1, brk:0, shiftT:0, ers:1, speed:0, overtake:false, surf:['asphalt'], slipMax:0, impact:0 });
+  const state = id => ({ setup:{engineEra:id}, gear:5, rpm:12000, thr:1, brk:0, shiftT:0, ers:1, speed:0, overtake:false, surf:['asphalt','asphalt','asphalt','asphalt'], slipMax:0, alpha:[0,0,0,0], lock:[0,0,0,0], spin:[0,0,0,0], Fz:[1900,1900,2250,2250], impact:0 });
   const stats = (buffer, start = 0.2, end = 0.6) => {
     const d = buffer.getChannelData(0); let energy = 0, diff = 0, peak = 0, n = 0;
     for (let i = Math.ceil(start * rate); i < Math.min(d.length, end * rate); i++) {
@@ -23,9 +23,10 @@
   const render = async (id, options = {}) => {
     const ac = new OfflineAudioContext(2, rate * 0.65, rate), audio = new EngineAudio(), sim = Object.assign(state(id), options.sim);
     audio.init(ac); audio.muted = !!options.muted;
+    if (options.volume !== undefined) audio.volume = options.volume;
     if (options.synthOnly) audio.v12Loading = Promise.resolve(false);
     else if (id === 'v12') check(await audio.loadV12(), 'V12 recording did not load');
-    audio.update(sim, options.on !== false, options.near || null, !!options.inside);
+    audio.update(sim, options.on !== false, options.near ? (Array.isArray(options.near) ? options.near : [options.near]) : null, !!options.inside, options.dist || 0);
     if (options.recordedOnly) { audio.synthG.gain.cancelScheduledValues(0); audio.synthG.gain.setValueAtTime(0, 0); }
     const buffer = await ac.startRendering();
     return { audio, sim, buffer, ...stats(buffer) };
@@ -57,17 +58,17 @@
   check((await render('bad-saved-era')).audio.era.id === 'v6', 'invalid era fallback');
 
   // Prove the recording is audible and follows RPM, rather than repeating a pass-by.
-  const dominantBank = (buffer, expected) => {
-    const d = buffer.getChannelData(0), start = rate * 0.3, n = 4096;
+  const hzPower = (d, start, n, hz) => {
+    const k = 2 * Math.cos(2 * Math.PI * hz / rate); let a = 0, b = 0;
+    for (let i = 0; i < n; i++) { const v = d[start + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1))) + k * a - b; b = a; a = v; }
+    return a * a + b * b - k * a * b;
+  };
+  const dominantHz = (d, start, n, lo, hi, step = 2) => {
     let best = 0, bestHz = 0;
-    for (let hz = expected * 0.85; hz <= expected * 1.15; hz += 2) {
-      const k = 2 * Math.cos(2 * Math.PI * hz / rate); let a = 0, b = 0;
-      for (let i = 0; i < n; i++) { const v = d[start + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1))) + k * a - b; b = a; a = v; }
-      const power = a * a + b * b - k * a * b;
-      if (power > best) { best = power; bestHz = hz; }
-    }
+    for (let hz = lo; hz <= hi; hz += step) { const power = hzPower(d, start, n, hz); if (power > best) { best = power; bestHz = hz; } }
     return bestHz;
   };
+  const dominantBank = (buffer, expected) => dominantHz(buffer.getChannelData(0), rate * 0.3, 4096, expected * 0.85, expected * 1.15);
   for (const rpm of [9500, 11000, CAR.limiter]) {
     const out = await render('v12', {sim:{rpm},recordedOnly:true});
     const hz = expected(ENGINE_ERAS.find(e => e.id === 'v12'), rpm) / 2;
@@ -83,6 +84,52 @@
   check((await render('v12', {muted:true})).peak < 1e-6, 'mute must silence recorded audio');
   check((await render('v12', {on:false})).peak < 1e-6, 'inactive recording must be silent');
   check((await render('v12', {sim:{shiftT:0.045}})).rms < (await render('v12')).rms * 0.3, 'gear cut must duck the recording');
+
+  // Rate window: pitch-shifting drags the recorded formants, so each loop only plays where its
+  // demanded rate is mild (full level 0.88–1.12, smoothstep fade to silence at the 0.85/1.15 clamp).
+  // Synthesis covers exactly what the fades give up — silent at full blend, back for over-rev —
+  // and the helmet lowpass no longer dulls the recording when it is loudest.
+  const v12 = ENGINE_ERAS.find(e => e.id === 'v12');
+  const soundRpmOf = rpm => v12.idle + Math.max(0, Math.min(1.08, (rpm - CAR.idle) / (CAR.limiter - CAR.idle))) * (v12.redline - v12.idle);
+  const fadeOf = rate => { const e = Math.max(0, Math.min(1, Math.min(rate - 0.85, 1.15 - rate) / 0.03)); return e * e * (3 - 2 * e); };
+  const windowSweep = [];
+  for (const rpm of [CAR.idle, 8500, 9500, 11000, CAR.limiter, 13500]) {
+    const out = await render('v12', {sim:{rpm}}), sr = soundRpmOf(rpm);
+    const rec = Math.max(0, Math.min(1, (sr - 8500) / 2000)), blend = Math.max(0, Math.min(1, (sr - 11000) / 3000));
+    let cover = 0;
+    out.audio.v12Loops.forEach((loop, i) => {
+      const demand = sr / loop.rpm, fade = fadeOf(demand);
+      cover = Math.max(cover, fade);
+      const rate = loop.source.playbackRate.value;
+      check(rate >= 0.85 - 1e-6 && rate <= 1.15 + 1e-6, 'V12 playbackRate must stay inside 0.85–1.15 at ' + rpm + ': ' + rate);
+      check(Math.abs(rate - Math.max(0.85, Math.min(1.15, demand))) < 1e-6, 'V12 playbackRate must follow the clamped demand at ' + rpm);
+      check(Math.abs(loop.gain.gain.value - 2.8 * rec * fade * Math.sqrt(i ? blend : 1 - blend)) < 1e-3, 'V12 loop gain must fade with the rate window at ' + rpm);
+    });
+    check(Math.abs(out.audio.synthG.gain.value - (1 - rec * cover)) < 1e-3, 'synth must cover exactly what the loops fade out at ' + rpm);
+    windowSweep.push({ rpm, synth: out.audio.synthG.gain.value, loops: out.audio.v12Loops.map(l => l.gain.gain.value) });
+  }
+  const partBlend = windowSweep[1], fullBlend = windowSweep[4], overRev = windowSweep[5];
+  check(fullBlend.synth < 1e-3 && fullBlend.loops[1] > 2, 'full blend must silence the synth under the recording');
+  check(overRev.loops.every(g => g < 1e-3) && overRev.synth > 0.99, 'over-rev past both windows must hand back to synthesis');
+  check(partBlend.synth > 0.4, 'partial blend must keep synth for a smooth transition');
+  // A downshift blip inside the window still lifts the loop rate 7% (rendered so the rate settles).
+  const blipCtx = new OfflineAudioContext(2, rate * 0.65, rate), blipA = new EngineAudio(), blipSim = state('v12');
+  blipA.init(blipCtx); check(await blipA.loadV12(), 'blip V12 load'); blipSim.rpm = 11000;
+  blipA.update(blipSim, true, null, false); blipSim.gear = 4; blipA.update(blipSim, true, null, false);
+  await blipCtx.startRendering();
+  check(blipA.blipT > 0 && Math.abs(blipA.v12Loops[1].source.playbackRate.value - soundRpmOf(11000) / 14000 * 1.07) < 1e-3, 'downshift blip must lift the in-window loop rate 7%');
+  const helmLo = await render('v12', {sim:{rpm:9000}, inside:true}), outLo = await render('v12', {sim:{rpm:9000}});
+  const helmHi = await render('v12', {sim:{rpm:CAR.limiter}, inside:true}), outHi = await render('v12', {sim:{rpm:CAR.limiter}});
+  check(Math.abs(helmLo.audio.lp.frequency.value / outLo.audio.lp.frequency.value - 0.4) < 1e-3, 'helmet factor must be the v12 constant at partial recording');
+  check(Math.abs(helmHi.audio.lp.frequency.value / outHi.audio.lp.frequency.value - 0.4) < 1e-3, 'helmet factor must not depend on the recording level');
+  check(helmHi.brightness < outHi.brightness, 'helmet must still soften the exhaust at full blend');
+  const manifest = await (await fetch('../assets/audio/runtime.json')).json();
+  const oldDuration = [0.2327, 0.1829]; // pre-regeneration mid/high loop lengths
+  outHi.audio.v12Loops.forEach((loop, i) => {
+    check(loop.source.buffer.duration > oldDuration[i], 'V12 loop ' + i + ' must be longer than the old ' + oldDuration[i] + ' s: ' + loop.source.buffer.duration);
+    check(Math.abs(loop.source.buffer.duration - manifest.loops[i].durationSeconds) < 1e-6, 'decoded loop duration must match the manifest');
+  });
+  lines.push('PASS: V12 seams — rate window 0.85–1.15 with smoothstep fade over sweep ' + windowSweep.map(s => s.rpm).join('/') + ' rpm; synth ' + fullBlend.synth.toFixed(3) + ' at full blend, ' + overRev.synth.toFixed(3) + ' on over-rev, ' + partBlend.synth.toFixed(3) + ' at partial; helmet factor constant 0.4 (recording-independent), brightness ' + helmHi.brightness.toFixed(3) + ' < ' + outHi.brightness.toFixed(3) + '; loops ' + outHi.audio.v12Loops.map(l => l.source.buffer.duration.toFixed(3) + ' s').join('/') + ' match manifest.');
 
   // A missing file, corrupt decode or network error keeps a playable synth and never retries every frame.
   const realFetch = window.fetch;
@@ -122,6 +169,7 @@
 
   // Exercise shifts, limiter, impacts, surface effects, pause/resume and era changes on one running graph.
   const ac = new OfflineAudioContext(2, rate * 2.2, rate), audio = new EngineAudio(), sim = state('v12');
+  const transientNears = [{ rpm: 11000, dist: 9, closing: 12, pan: 0.3 }, { rpm: 9500, dist: 22, closing: -6, pan: -0.5 }];
   audio.init(ac); check(await audio.loadV12(), 'transient V12 load'); audio.update(sim, true, null, false);
   const steps = [0.2,0.3,0.5,0.65,0.85,1.05,1.25,1.5,1.8].map(t => ac.suspend(t));
   const rendering = ac.startRendering();
@@ -135,7 +183,7 @@
     if (i === 6) { sim.setup.engineEra = 'v10'; sim.impact = 0; sim.gear = 1; }
     if (i === 7) audio.muted = true;
     if (i === 8) { audio.muted = false; sim.setup.engineEra = 'v12'; }
-    audio.update(sim, i !== 5, null, false);
+    audio.update(sim, i !== 5, i >= 6 ? transientNears : null, false);
     if (i === 2) check(audio.blipT > ac.currentTime, 'downshift throttle blip missing');
     if (i === 6) check(audio.blipT === 0 && audio.era.id === 'v10', 'resume must not invent a downshift');
     if (i === 7) check(audio.v12Loops.every(loop => loop.gain.gain.value < 0.06), 'samples did not fade out after changing era');
@@ -143,19 +191,726 @@
   }
   const transient = stats(await rendering, 0, 2.2);
   check(transient.peak < 0.95 && transient.rms > 0.01, 'transient output clipped or silent');
+  const v12era = ENGINE_ERAS.find(e => e.id === 'v12');
+  for (let i = 0; i < transientNears.length; i++) check(Math.abs(audio.opps[i].oscs[0][0].frequency.value - expected(v12era, transientNears[i].rpm) * (1 + transientNears[i].closing / 343)) < 1, 'era change must retune every rival voice');
   check((await render('v12', {synthOnly:true})).rms > 0.02, 'V12 synthesis fallback');
   lines.push('PASS: all four real Web Audio renders, throttle/helmet dynamics, rival doppler/pan, turbo/ERS gating, shifts, limiter, surfaces, mute and pause.');
+
+  // Rev limiter: the cut must be an audio-rate buzz locked to the firing order, not a fixed frame flutter.
+  // The rate is f/3: the synth is periodic at f/2, so its envelope can only contain multiples of f/2 —
+  // energy at f/3 can only come from the gate. Rectify + a one-firing-period moving average nulls the
+  // firing ripple and keeps the slower cut ripple.
+  const cutEnvelope = (buffer, f) => {
+    const d = buffer.getChannelData(0), L = Math.max(1, Math.round(rate / f)), env = new Float32Array(d.length);
+    let sum = 0;
+    for (let i = 0; i < d.length; i++) { sum += Math.abs(d[i]); if (i >= L) sum -= Math.abs(d[i - L]); env[i] = sum / Math.min(i + 1, L); }
+    return env;
+  };
+  const cutStart = rate * 0.25, cutN = rate * 0.3, cutRates = {};
+  for (const era of ENGINE_ERAS) {
+    const f = expected(era, CAR.limiter), r = f / 3;
+    const out = await render(era.id, {sim:{rpm:CAR.limiter}, synthOnly:true});
+    const env = cutEnvelope(out.buffer, f);
+    const measured = dominantHz(env, cutStart, cutN, f * 0.25, f * 0.45, 1);
+    check(Math.abs(measured / r - 1) < 0.03, era.id + ': limiter buzz not locked to the firing order: ' + measured + ' vs ' + r.toFixed(1) + ' Hz');
+    let lo = Infinity, hi = 0, mean = 0;
+    for (let i = cutStart; i < cutStart + cutN; i++) { lo = Math.min(lo, env[i]); hi = Math.max(hi, env[i]); mean += env[i]; }
+    mean /= cutN;
+    check((hi - lo) / mean > 0.25, era.id + ': limiter cut must audibly gate the engine');
+    const cutPower = hzPower(env, cutStart, cutN, r);
+    check(hzPower(env, cutStart, cutN, 19) < cutPower * 0.05, era.id + ': fixed 19 Hz flutter must be gone');
+    cutRates[era.id] = { measured, cutPower };
+    lines.push(era.id + ' limiter: firing ' + f.toFixed(0) + ' Hz, cut buzz ' + measured.toFixed(0) + ' Hz (f/3 = ' + r.toFixed(0) + '), envelope swing ' + ((hi - lo) / mean).toFixed(2));
+  }
+  check(cutRates.v10.measured > cutRates.v6.measured * 1.5, 'cut rate must scale with the era firing order');
+  const v10 = ENGINE_ERAS.find(e => e.id === 'v10'), fOver = expected(v10, 13500);
+  const over = await render('v10', {sim:{rpm:13500}, synthOnly:true});
+  const overHz = dominantHz(cutEnvelope(over.buffer, fOver), cutStart, cutN, fOver * 0.25, fOver * 0.45, 1);
+  check(Math.abs(overHz / (fOver / 3) - 1) < 0.03 && overHz > cutRates.v10.measured * 1.03, 'cut rate must keep following rpm past the limiter');
+  const fBelow = expected(v10, 12000), below = await render('v10', {synthOnly:true});
+  check(hzPower(cutEnvelope(below.buffer, fBelow), cutStart, cutN, fBelow / 3) < cutRates.v10.cutPower * 0.05, 'no ignition-cut modulation below the limiter');
+  lines.push('PASS: limiter buzz at f/3 in every era, ' + overHz.toFixed(0) + ' Hz at 13,500 rpm vs ' + cutRates.v10.measured.toFixed(0) + ' Hz on the limiter; no cut below it, no 19 Hz flutter.');
+
+  // Rain: a bright bed plus speed-scaled spray in wet sessions, softer in the helmet, silent when dry/muted/paused.
+  const wetSim = extra => Object.assign({setup:{engineEra:'v6',wet:true}}, extra);
+  const dry = await render('v6', {sim:{speed:55}}), wet = await render('v6', {sim:wetSim({speed:55})});
+  const dryIn = await render('v6', {sim:{speed:55}, inside:true}), wetIn = await render('v6', {sim:wetSim({speed:55}), inside:true});
+  check(dry.audio.rain.gain.value === 0 && dry.audio.spray.gain.value === 0, 'dry sessions must keep rain voices silent');
+  check(wet.rms > dry.rms && wet.brightness > dry.brightness * 1.1, 'wet render must add audible high-frequency rain');
+  // Isolate the rain contribution: whole-mix RMS cannot (the engine dominates).
+  const hf = r => (r.brightness * r.rms) ** 2;
+  check(hf(wet) - hf(dry) > (hf(wetIn) - hf(dryIn)) * 1.5, 'rain must be softer inside the cockpit');
+  check(wetIn.audio.rain.gain.value < wet.audio.rain.gain.value && wetIn.audio.spray.gain.value < wet.audio.spray.gain.value, 'helmet must attenuate the rain voices');
+  check((await render('v6', {sim:wetSim({speed:0})})).audio.spray.gain.value === 0, 'spray must wait for road speed');
+  check((await render('v6', {sim:wetSim({speed:60})})).audio.spray.gain.value > 0.05, 'spray must scale with speed');
+  check((await render('v6', {muted:true, sim:wetSim({speed:60})})).peak < 1e-6, 'mute must silence rain');
+  check((await render('v6', {on:false, sim:wetSim({speed:60})})).peak < 1e-6, 'inactive session must silence rain');
+  lines.push('PASS: rain bed/spray — brightness wet ' + wet.brightness.toFixed(3) + ' vs dry ' + dry.brightness.toFixed(3) + '; rain HF energy outside/inside ' + ((hf(wet) - hf(dry)) / (hf(wetIn) - hf(dryIn))).toFixed(1) + 'x; speed fade-in, dry silence, mute and pause.');
+
+  // Trackside ambience: the chase camera (7.4 m back) gets a stronger send plus distance level/air-absorption
+  // treatment; cockpit stays exactly onboard. Bus audibility is proven from rendered buffers, not just params.
+  const chase = await render('v10', {dist:7.4, synthOnly:true}), board = await render('v10', {synthOnly:true});
+  const pit = await render('v10', {inside:true, synthOnly:true}), pitFar = await render('v10', {inside:true, dist:7.4, synthOnly:true});
+  check(chase.audio.send.gain.value > board.audio.send.gain.value * 3, 'ambience send must scale with camera distance');
+  const mid = await render('v10', {dist:3.7, synthOnly:true});
+  check(mid.audio.send.gain.value > pit.audio.send.gain.value && mid.audio.send.gain.value < chase.audio.send.gain.value, 'ambience send must follow distance continuously');
+  check(pit.audio.send.gain.value < 0.05, 'cockpit ambience send must be near zero');
+  check(chase.audio.eg.gain.value < board.audio.eg.gain.value * 0.85 && chase.rms < board.rms * 0.9, 'chase engine must be quieter than onboard');
+  check(chase.audio.lp.frequency.value < board.audio.lp.frequency.value * 0.8 && chase.brightness < board.brightness, 'chase engine must be duller than onboard (air absorption)');
+  check(Math.abs(pitFar.audio.lp.frequency.value - pit.audio.lp.frequency.value) < 1 && Math.abs(pitFar.audio.eg.gain.value - pit.audio.eg.gain.value) < 1e-4, 'helmet treatment must ignore camera distance');
+  // Buffer proof: render the raw send bus in isolation — dry paths dropped, convolver bypassed — so the
+  // random IR can neither colour nor interfere with the measurement (same pattern as rivalSend below).
+  const sendBus = async (inside, dist) => {
+    const ctx = new OfflineAudioContext(2, rate * 0.65, rate), a = new EngineAudio();
+    a.init(ctx); a.update(state('v10'), true, null, inside, dist);
+    a.gate.disconnect(a.master); // player dry path; the send taps the gate, so the bus feed stays alive
+    for (const v of a.opps) (v.pan || v.g).disconnect(a.master);
+    for (const s of a.squeals) (s.pan || s.g).disconnect(a.master);
+    for (const g of [a.wind, a.rumble, a.gravel, a.grass, a.hit, a.pop, a.rain, a.spray, a.tg, a.turboAir, a.bov, a.ersG]) g.disconnect(a.master);
+    a.send.disconnect(a.verb); a.verb.disconnect(a.verbG); a.send.connect(a.verbG);
+    return stats(await ctx.startRendering());
+  };
+  const chaseBus = await sendBus(false, 7.4), pitBus = await sendBus(true, 0);
+  check(chaseBus.rms > 0.005, 'ambience bus must be non-silent in chase');
+  check(chaseBus.rms > pitBus.rms * 4, 'chase must reflect far more trackside than cockpit');
+  check((await render('v10', {dist:7.4, muted:true, synthOnly:true})).peak < 1e-6, 'mute must silence the ambience bus');
+  check((await render('v10', {dist:7.4, on:false, synthOnly:true})).peak < 1e-6, 'inactive session must silence the ambience bus');
+  lines.push('PASS: trackside ambience — send chase ' + chase.audio.send.gain.value.toFixed(2) + ' / mid ' + mid.audio.send.gain.value.toFixed(2) + ' / cockpit ' + pit.audio.send.gain.value.toFixed(2) + '; isolated bus RMS chase ' + chaseBus.rms.toFixed(4) + ' vs cockpit ' + pitBus.rms.toFixed(4) + ' (' + (chaseBus.rms / pitBus.rms).toFixed(1) + 'x); chase RMS ' + chase.rms.toFixed(3) + ' vs onboard ' + board.rms.toFixed(3) + ', brightness ' + chase.brightness.toFixed(3) + ' vs ' + board.brightness.toFixed(3) + '; mute/pause silent.');
+
+  // Rival pack: the 3 nearest AI cars each get a voice. Voice 0 keeps the original names and level,
+  // voices 1–2 are trimmed; every voice follows the selected era and taps the trackside send.
+  const v10era = ENGINE_ERAS.find(e => e.id === 'v10'), v6era = ENGINE_ERAS.find(e => e.id === 'v6');
+  const trio = [
+    { rpm: 12000, dist: 6, closing: 25, pan: -0.7 },
+    { rpm: 10000, dist: 12, closing: -15, pan: 0.4 },
+    { rpm: 9000, dist: 20, closing: 8, pan: 0.9 },
+  ];
+  const pack = await render('v10', { near: trio, synthOnly: true });
+  check(pack.audio.oppO === pack.audio.opps[0].oscs && pack.audio.oppLP === pack.audio.opps[0].lp && pack.audio.oppG === pack.audio.opps[0].g && pack.audio.oppPan === pack.audio.opps[0].pan, 'voice 0 must keep the original node names');
+  for (let i = 0; i < 3; i++) {
+    const v = pack.audio.opps[i], n = trio[i], fo = expected(v10era, n.rpm) * (1 + n.closing / 343);
+    check(Math.abs(v.oscs[0][0].frequency.value - fo) < 1, 'rival ' + i + ': wrong firing frequency/doppler');
+    check(Math.abs(v.oscs[1][0].frequency.value - fo / 2) < 1, 'rival ' + i + ': half-order oscillator missing');
+    check(Math.abs(v.pan.pan.value - n.pan) < 1e-3, 'rival ' + i + ': wrong stereo position');
+    check(Math.abs(v.lp.frequency.value - (1200 + v10era.cutoff * 0.7) / (1 + n.dist / 100)) < 1, 'rival ' + i + ': distance filtering missing');
+  }
+  check(pack.audio.opps[0].g.gain.value > pack.audio.opps[1].g.gain.value && pack.audio.opps[1].g.gain.value > pack.audio.opps[2].g.gain.value, 'nearest rival must be the loudest voice');
+  check(Math.abs(pack.audio.opps[0].g.gain.value - 0.2 / (1 + (6 / 14) ** 2)) < 1e-4, 'voice 0 level formula must stay unchanged');
+  const pack6 = await render('v6', { near: trio, synthOnly: true });
+  check(Math.abs(pack6.audio.opps[2].oscs[0][0].frequency.value - expected(v6era, trio[2].rpm) * (1 + trio[2].closing / 343)) < 1, 'every rival voice must follow the selected era');
+  // Buffer proof: a second rival adds energy at its own firing frequency (Goertzel), not just at the nearest one's.
+  const pairNears = [{ rpm: 12000, dist: 10, closing: 0, pan: 0 }, { rpm: 9000, dist: 25, closing: 0, pan: 0 }];
+  const pair = await render('v6', { near: pairNears, synthOnly: true }), solo = await render('v6', { near: [pairNears[0]], synthOnly: true });
+  const f2 = expected(v6era, 9000), bandStart = rate * 0.3, bandN = 4096;
+  const pPair = hzPower(pair.buffer.getChannelData(0), bandStart, bandN, f2), pSolo = hzPower(solo.buffer.getChannelData(0), bandStart, bandN, f2);
+  check(pPair > pSolo * 8, 'second rival must add measurable energy at its firing frequency');
+  const f2Hz = dominantHz(pair.buffer.getChannelData(0), bandStart, bandN, f2 * 0.95, f2 * 1.05, 1);
+  check(Math.abs(f2Hz / f2 - 1) < 0.02, 'second rival band must peak at its firing frequency: ' + f2Hz + ' vs ' + f2.toFixed(1));
+  // Empty/null nears silence every voice; mute and pause still silence the whole pack.
+  const empty = await render('v6', { near: [], synthOnly: true }), absent = await render('v6', { synthOnly: true });
+  check(empty.audio.opps.every(v => v.g.gain.value < 1e-6) && absent.audio.opps.every(v => v.g.gain.value < 1e-6), 'empty/null nears must silence all rival voices');
+  check((await render('v6', { near: trio, muted: true, synthOnly: true })).peak < 1e-6, 'mute must silence the rival pack');
+  check((await render('v6', { near: trio, on: false, synthOnly: true })).peak < 1e-6, 'inactive session must silence the rival pack');
+  // Every voice taps the trackside send: silence the player, disconnect the rivals' DRY path and bypass
+  // the convolver so the rendered output IS the raw send bus. Each voice's firing frequency must be present
+  // in it. (Isolating the bus avoids the dry/wet interference and random-IR coloration that make a plain
+  // wet/dry energy A/B unreliable.)
+  const rivalSend = async nears => {
+    const ctx = new OfflineAudioContext(2, rate * 0.65, rate), a = new EngineAudio();
+    a.init(ctx); a.update(state('v10'), true, nears, false, 7.4);
+    a.eg.gain.cancelScheduledValues(0); a.eg.gain.setValueAtTime(0, 0);
+    for (const v of a.opps) (v.pan || v.g).disconnect(a.master); // drop the dry path, keep the send tap
+    a.send.disconnect(a.verb); a.verb.disconnect(a.verbG); a.send.connect(a.verbG);
+    return (await ctx.startRendering()).getChannelData(0);
+  };
+  const bus1 = await rivalSend(trio.slice(0, 1)), bus2 = await rivalSend(trio.slice(0, 2)), bus3 = await rivalSend(trio);
+  const foOf = n => expected(v10era, n.rpm) * (1 + n.closing / 343);
+  const powAt = (d, n) => hzPower(d, rate * 0.3, 4096, foOf(n));
+  check(powAt(bus2, trio[1]) > powAt(bus1, trio[1]) * 2, 'rival 1 must feed the trackside send');
+  check(powAt(bus3, trio[2]) > powAt(bus2, trio[2]) * 2, 'rival 2 must feed the trackside send');
+  lines.push('PASS: rival pack — 3 voices at ' + pack.audio.opps.map(v => v.oscs[0][0].frequency.value.toFixed(0)).join('/') + ' Hz, pans ' + pack.audio.opps.map(v => v.pan.pan.value.toFixed(2)).join('/') + ', gains ' + pack.audio.opps.map(v => v.g.gain.value.toFixed(3)).join('>') + '; second rival band ' + f2Hz.toFixed(0) + ' Hz at ' + (pPair / Math.max(pSolo, 1e-12)).toFixed(0) + 'x solo power; empty/null silence, mute/pause silent, all voices on the send.');
+
+  // Tyre squeal: four per-wheel voices. Pitch follows that wheel's slip severity and load, pan follows its
+  // side, slow lockups chirp. Rendered proofs isolate the squeal paths (same pattern as sendBus/rivalSend):
+  // zeroing eg kills the engine dry AND its send feed; dry renders drop the wet return, wet renders drop the
+  // squeal dry paths and bypass the random IR so the output IS the raw squeal bus.
+  const squealRender = async (extra, wet = false) => {
+    const ctx = new OfflineAudioContext(2, rate * 0.65, rate), a = new EngineAudio();
+    a.init(ctx); a.update(Object.assign(state('v6'), extra), true, null, false, wet ? 7.4 : 0);
+    a.eg.gain.cancelScheduledValues(0); a.eg.gain.setValueAtTime(0, 0);
+    for (const g of [a.wind, a.rumble, a.gravel, a.grass, a.hit, a.pop, a.rain, a.spray, a.tg, a.turboAir, a.bov, a.ersG]) g.disconnect(a.master);
+    for (const v of a.opps) (v.pan || v.g).disconnect(a.master);
+    if (wet) { for (const s of a.squeals) (s.pan || s.g).disconnect(a.master); a.send.disconnect(a.verb); a.verb.disconnect(a.verbG); a.send.connect(a.verbG); }
+    else a.verbG.disconnect(a.master);
+    const buffer = await ctx.startRendering();
+    return { a, buffer, ...stats(buffer) };
+  };
+  const chanEnergy = (buffer, ch) => { const d = buffer.getChannelData(ch); let e = 0; for (let i = rate * 0.2; i < rate * 0.6; i++) e += d[i] ** 2; return e; };
+  const sqHz = r => dominantHz(r.buffer.getChannelData(0), rate * 0.3, 4096, 600, 1700, 2);
+  const slipLo = await squealRender({ speed: 40, alpha: [0.10, 0, 0, 0] });
+  const slipHi = await squealRender({ speed: 40, alpha: [0.25, 0, 0, 0] });
+  const loHz = sqHz(slipLo), hiHz = sqHz(slipHi);
+  check(loHz > 700 && loHz < 1100 && hiHz > 1150 && hiHz < 1600, 'squeal must sit in the physical 700–1600 Hz range: ' + loHz + '/' + hiHz);
+  check(hiHz > loHz + 200, 'squeal pitch must rise with slip severity: ' + loHz + ' -> ' + hiHz);
+  check(slipHi.a.squeals[0].f.frequency.value > slipLo.a.squeals[0].f.frequency.value + 200, 'bandpass centre must follow slip');
+  const loadHi = await squealRender({ speed: 40, alpha: [0.25, 0, 0, 0], Fz: [6000, 1900, 2250, 2250] });
+  check(loadHi.a.squeals[0].f.frequency.value > slipHi.a.squeals[0].f.frequency.value + 100, 'normal load must raise squeal pitch');
+  // Single-wheel lockups pan to their side — proven from rendered L/R energy, not parameter values.
+  const lockFL = await squealRender({ speed: 40, lock: [0, 1, 0, 0] });
+  const lockRR = await squealRender({ speed: 40, lock: [0, 0, 1, 0] });
+  check(chanEnergy(lockFL.buffer, 0) > chanEnergy(lockFL.buffer, 1) * 2, 'front-left lockup must pan left');
+  check(chanEnergy(lockRR.buffer, 1) > chanEnergy(lockRR.buffer, 0) * 2, 'rear-right lockup must pan right');
+  check(lockFL.a.squeals[1].g.gain.value > 0.05 && lockFL.a.squeals.every((s, w) => w === 1 || s.g.gain.value === 0), 'only the locking wheel may squeal');
+  const spinRR = await squealRender({ speed: 40, spin: [0, 0, 1, 0] });
+  check(lockRR.a.squeals[2].f.frequency.value < spinRR.a.squeals[2].f.frequency.value, 'lockup should read lower than wheelspin');
+  // Low-speed lockup chirps; zero slip and standstill are silent; audibility scales with surface speed.
+  const slowLock = await squealRender({ speed: 2, lock: [0, 0, 0, 1] });
+  check(slowLock.rms > 0.0005, 'slow lockup must be audible');
+  check(slowLock.rms < lockFL.rms * 0.9, 'audibility must scale with surface speed');
+  check((await squealRender({ speed: 2 })).peak < 1e-6, 'zero slip must be silent');
+  check((await squealRender({ speed: 0, lock: [0, 0, 0, 1] })).peak < 1e-6, 'standstill must be silent even locked');
+  // One slipping wheel is quieter than four; the summed budget stays near the old single voice.
+  const lockAll = await squealRender({ speed: 40, lock: [1, 1, 1, 1] });
+  check(lockAll.rms > lockRR.rms * 1.5, 'four-wheel slip must be louder than one');
+  check(lockAll.a.squeals.reduce((s, v) => s + v.g.gain.value, 0) < 0.4, 'total squeal gain must stay conservative');
+  const busSlip = await squealRender({ speed: 40, lock: [1, 1, 1, 1] }, true), busGrip = await squealRender({ speed: 40 }, true);
+  check(busSlip.rms > 0.0002 && busGrip.peak < 1e-6, 'squeal must feed the trackside send');
+  check((await render('v6', { muted: true, sim: { speed: 40, lock: [1, 1, 1, 1] } })).peak < 1e-6, 'mute must silence tyre squeal');
+  check((await render('v6', { on: false, sim: { speed: 40, lock: [1, 1, 1, 1] } })).peak < 1e-6, 'inactive session must silence tyre squeal');
+  lines.push('PASS: tyre squeal — rendered pitch ' + loHz + ' -> ' + hiHz + ' Hz with slip (centre ' + slipLo.a.squeals[0].f.frequency.value.toFixed(0) + ' -> ' + slipHi.a.squeals[0].f.frequency.value.toFixed(0) + '), load +' + (loadHi.a.squeals[0].f.frequency.value - slipHi.a.squeals[0].f.frequency.value).toFixed(0) + ' Hz; FL/RR lockup L/R energy ' + (chanEnergy(lockFL.buffer, 0) / chanEnergy(lockFL.buffer, 1)).toFixed(1) + 'x / ' + (chanEnergy(lockRR.buffer, 1) / chanEnergy(lockRR.buffer, 0)).toFixed(1) + 'x; slow lock RMS ' + slowLock.rms.toFixed(4) + ', 4-wheel ' + lockAll.rms.toFixed(4) + ' vs 1-wheel ' + lockRR.rms.toFixed(4) + '; send tap, mute/pause and standstill silence.');
+
+  // Surface & wind: kerbs knock at an audio-rate v/spacing rhythm (not a constant rumble), grass is a
+  // soft low swish apart from the sharp gravel/sand band, wind brightens with speed and the helmet
+  // quiets it. Isolated renders drop every other voice (same pattern as sendBus/squealRender): zeroing
+  // eg kills the engine dry AND its send feed; dry renders drop the wet return, wet renders bypass the
+  // random IR so the output IS the raw send bus of the kept voices.
+  const surfaceRender = async (extra, keep, inside = false, wet = false) => {
+    const ctx = new OfflineAudioContext(2, rate * 0.65, rate), a = new EngineAudio();
+    a.init(ctx); a.update(Object.assign(state('v6'), extra), true, null, inside, wet ? 7.4 : 0);
+    a.eg.gain.cancelScheduledValues(0); a.eg.gain.setValueAtTime(0, 0);
+    for (const g of [a.wind, a.rumble, a.gravel, a.grass, a.hit, a.pop, a.rain, a.spray, a.tg, a.turboAir, a.bov, a.ersG]) g.disconnect(a.master);
+    for (const v of a.opps) (v.pan || v.g).disconnect(a.master);
+    for (const s of a.squeals) (s.pan || s.g).disconnect(a.master);
+    if (wet) { a.send.disconnect(a.verb); a.verb.disconnect(a.verbG); a.send.connect(a.verbG); }
+    else { a.verbG.disconnect(a.master); for (const name of keep) a[name].connect(a.master); }
+    const buffer = await ctx.startRendering();
+    return { a, buffer, ...stats(buffer) };
+  };
+  const spacing = 0.4; // kerb serration spacing in game.js: strike rate = speed / spacing
+  const kerbRates = {};
+  for (const v of [12, 24]) {
+    const r = v / spacing;
+    const out = await surfaceRender({ speed: v, surf: ['kerb', 'asphalt', 'kerb', 'asphalt'] }, ['rumble']);
+    check(Math.abs(out.a.strikeO.frequency.value - r) < 0.5, 'kerb strike oscillator must track speed');
+    // Measure the rhythm FROM THE RENDERED ENVELOPE: rectify + one 110 Hz carrier period of smoothing
+    // (like the limiter test), then find the strike fundamental.
+    const env = cutEnvelope(out.buffer, 110);
+    const measured = dominantHz(env, cutStart, cutN, r * 0.6, r * 1.4, 1);
+    check(Math.abs(measured / r - 1) < 0.05, 'kerb rhythm must be v/spacing: ' + measured + ' vs ' + r.toFixed(1) + ' Hz');
+    let lo = Infinity, hi = 0, mean = 0;
+    for (let i = cutStart; i < cutStart + cutN; i++) { lo = Math.min(lo, env[i]); hi = Math.max(hi, env[i]); mean += env[i]; }
+    mean /= cutN;
+    check((hi - lo) / mean > 0.3, 'kerb must knock rhythmically, not rumble constantly');
+    kerbRates[v] = measured;
+    lines.push('Kerb ' + v + ' m/s: strike ' + measured.toFixed(0) + ' Hz (v/' + spacing + ' = ' + r.toFixed(0) + '), envelope swing ' + ((hi - lo) / mean).toFixed(2));
+  }
+  check(kerbRates[24] > kerbRates[12] * 1.7, 'kerb strike rate must scale with speed');
+  const noKerb = await surfaceRender({ speed: 40 }, ['rumble']);
+  check(noKerb.peak < 1e-6 && noKerb.a.rumble.gain.value === 0 && noKerb.a.strikeG.gain.value === 0, 'no kerb must silence the rumble');
+  const crawl = await surfaceRender({ speed: 2, surf: ['kerb', 'kerb', 'asphalt', 'asphalt'] }, ['rumble']);
+  check(crawl.a.rumble.gain.value > 0.02 && crawl.rms > 0.0002, 'slow kerb crawl must still knock');
+  check(Math.abs(crawl.a.strikeO.frequency.value - 2 / spacing) < 0.1, 'crawl strike rate must follow speed');
+  const fastKerb = await surfaceRender({ speed: 90, surf: ['kerb', 'kerb', 'kerb', 'kerb'] }, ['rumble']);
+  const kerbPeak = fastKerb.a.rumble.gain.value + fastKerb.a.strikeG.gain.value;
+  check(kerbPeak > 0.1 && kerbPeak < 0.3, 'kerb peak must stay well under the old 0.9 and the engine (0.38): ' + kerbPeak.toFixed(3));
+  // Grass vs gravel/sand: separate voices, spectrally distinct, no cross-triggering.
+  const grassR = await surfaceRender({ speed: 40, surf: ['grass', 'asphalt', 'grass', 'asphalt'] }, ['grass']);
+  const gravelR = await surfaceRender({ speed: 40, surf: ['gravel', 'asphalt', 'gravel', 'asphalt'] }, ['gravel']);
+  const sandR = await surfaceRender({ speed: 40, surf: ['sand', 'asphalt', 'sand', 'asphalt'] }, ['gravel']);
+  check(grassR.rms > 0.003 && gravelR.rms > 0.003, 'grass and gravel must be audible');
+  check(grassR.brightness < gravelR.brightness * 0.5, 'grass swish must be far duller than gravel: ' + grassR.brightness.toFixed(3) + ' vs ' + gravelR.brightness.toFixed(3));
+  check(grassR.a.grass.f.frequency.value >= 400 && grassR.a.grass.f.frequency.value <= 700, 'grass must be a low swish (400-700 Hz lowpass)');
+  // A single noise peak wanders between seeds; band energy does not. Average Goertzel power over
+  // four windows in the gravel band vs the low rumble band: the 2500 Hz Q0.7 bandpass must dominate
+  // the lows by a wide margin on any seed (measured min ~8.7x over 2000 seeds, threshold 3x).
+  const bandPower = (d, lo, hi) => {
+    let sum = 0;
+    for (const start of [rate * 0.2, rate * 0.3, rate * 0.4, rate * 0.5])
+      for (let hz = lo; hz <= hi; hz += 50) sum += hzPower(d, start, 4096, hz);
+    return sum;
+  };
+  const gravelD = gravelR.buffer.getChannelData(0);
+  const gravelRatio = bandPower(gravelD, 2000, 3000) / bandPower(gravelD, 300, 800);
+  check(gravelRatio > 3, 'gravel/sand must keep the sharp high band, not a low rumble: ' + gravelRatio.toFixed(1) + 'x');
+  check(grassR.a.gravel.gain.value === 0 && gravelR.a.grass.gain.value === 0, 'grass and gravel/sand must not cross-trigger');
+  check(Math.abs(sandR.a.gravel.gain.value - gravelR.a.gravel.gain.value) < 1e-6 && Math.abs(sandR.brightness - gravelR.brightness) < 0.15, 'sand must share the sharp gravel voice');
+  const grassSlow = await surfaceRender({ speed: 8, surf: ['grass', 'grass', 'asphalt', 'asphalt'] }, ['grass']);
+  check(grassR.a.grass.gain.value > grassSlow.a.grass.gain.value && grassR.a.grass.gain.value <= 0.15, 'grass level must scale with speed, conservatively');
+  // Wind: brightness follows speed (300 + v*12, capped ~2 kHz), gain curve unchanged, helmet quieter.
+  const windLo = await surfaceRender({ speed: 20 }, ['wind']);
+  const windHi = await surfaceRender({ speed: 80 }, ['wind']);
+  check(windHi.brightness > windLo.brightness * 1.4, 'wind must brighten with speed: ' + windLo.brightness.toFixed(3) + ' -> ' + windHi.brightness.toFixed(3));
+  check(Math.abs(windLo.a.wind.f.frequency.value / 540 - 1) < 0.01 && Math.abs(windHi.a.wind.f.frequency.value / 1260 - 1) < 0.01, 'wind filter must follow 300 + v*12');
+  check(Math.abs(windHi.a.wind.gain.value - Math.min(0.35, 80 * 80 / 9000 * 0.4)) < 1e-3, 'wind gain curve must stay unchanged');
+  const windCap = await surfaceRender({ speed: 200 }, ['wind']);
+  check(Math.abs(windCap.a.wind.f.frequency.value - 2000) < 20, 'wind brightness must cap near 2 kHz');
+  const windOut = await surfaceRender({ speed: 60 }, ['wind']);
+  const windIn = await surfaceRender({ speed: 60 }, ['wind'], true);
+  check(windIn.rms < windOut.rms * 0.7, 'helmet wind must be quieter than outside: ' + windIn.rms.toFixed(4) + ' vs ' + windOut.rms.toFixed(4));
+  check(Math.abs(windIn.a.wind.gain.value - windOut.a.wind.gain.value * 0.5) < 1e-3, 'helmet must halve the wind gain');
+  // Trackside taps: kerb/gravel/grass feed the send, wind (listener airflow) does not.
+  const kerbWet = await surfaceRender({ speed: 40, surf: ['kerb', 'kerb', 'kerb', 'kerb'] }, ['rumble'], false, true);
+  const grassWet = await surfaceRender({ speed: 40, surf: ['grass', 'grass', 'grass', 'grass'] }, ['grass'], false, true);
+  const windWet = await surfaceRender({ speed: 60 }, ['wind'], false, true);
+  check(kerbWet.rms > 0.0002 && grassWet.rms > 0.0002, 'kerb and grass must feed the trackside send');
+  check(windWet.peak < 1e-6, 'wind must not feed the trackside send');
+  check((await render('v6', { muted: true, sim: { speed: 60, surf: ['kerb', 'grass', 'gravel', 'sand'] } })).peak < 1e-6, 'mute must silence surface and wind voices');
+  check((await render('v6', { on: false, sim: { speed: 60, surf: ['kerb', 'grass', 'gravel', 'sand'] } })).peak < 1e-6, 'inactive session must silence surface and wind voices');
+  lines.push('PASS: surface & wind — kerb rhythm ' + kerbRates[12].toFixed(0) + '/' + kerbRates[24].toFixed(0) + ' Hz at 12/24 m/s (v/' + spacing + '), crawl knocks, peak ' + kerbPeak.toFixed(2) + '; grass brightness ' + grassR.brightness.toFixed(3) + ' vs gravel ' + gravelR.brightness.toFixed(3) + ' (high/low band energy ' + gravelRatio.toFixed(1) + 'x), sand shares gravel; wind ' + windLo.brightness.toFixed(3) + ' -> ' + windHi.brightness.toFixed(3) + ' brightness 20->80 m/s, helmet ' + (windIn.rms / windOut.rms).toFixed(2) + 'x; send taps, mute/pause silent.');
+
+  // V6 turbo hybrid signature sounds: spool lag from a boost state, air-rush whistle, blow-off on
+  // sharp lift, ERS harmonic whine. Time evolution uses suspend/resume so update() runs at scheduled
+  // moments mid-render. Isolation follows the surfaceRender pattern, but disconnects eg from the gate
+  // instead of zeroing its gain, so later update() calls in a scenario cannot fade the engine back in.
+  const isolateTurbo = (a, keep) => {
+    a.eg.disconnect(a.gate); // engine dry AND its send feed, immune to later gain automation
+    for (const g of [a.wind, a.rumble, a.gravel, a.grass, a.hit, a.pop, a.rain, a.spray, a.tg, a.turboAir, a.bov, a.ersG]) g.disconnect(a.master);
+    for (const v of a.opps) (v.pan || v.g).disconnect(a.master);
+    for (const s of a.squeals) (s.pan || s.g).disconnect(a.master);
+    a.verbG.disconnect(a.master);
+    for (const name of keep) a[name].connect(a.master);
+  };
+  const turboRender = async (extra, keep, era = 'v6') => {
+    const ctx = new OfflineAudioContext(2, rate * 0.65, rate), a = new EngineAudio();
+    a.init(ctx); if (era === 'v12') a.v12Loading = Promise.resolve(false);
+    a.update(Object.assign(state(era), extra), true, null, false);
+    isolateTurbo(a, keep);
+    const buffer = await ctx.startRendering();
+    return { a, buffer, ...stats(buffer) };
+  };
+  const winEnergy = (buffer, start, end) => {
+    const d = buffer.getChannelData(0), i0 = Math.ceil(start * rate), i1 = Math.min(d.length, Math.floor(end * rate));
+    let e = 0; for (let i = i0; i < i1; i++) e += d[i] ** 2;
+    return e / (i1 - i0);
+  };
+  const turboScenario = async (seconds, plan, keep = ['tg', 'turboAir', 'bov'], era = 'v6', muted = false) => {
+    const ctx = new OfflineAudioContext(2, rate * seconds, rate), a = new EngineAudio(), sim = state(era);
+    sim.speed = 60;
+    a.init(ctx); if (era === 'v12') a.v12Loading = Promise.resolve(false);
+    a.muted = muted;
+    plan(0, sim); a.update(sim, true, null, false);
+    isolateTurbo(a, keep);
+    const times = []; for (let t = 0.1; t < seconds - 0.04; t += 0.1) times.push(Math.round(t * 10) / 10);
+    const steps = times.map(t => ctx.suspend(t));
+    const rendering = ctx.startRendering();
+    const trace = [];
+    for (let i = 0; i < steps.length; i++) {
+      await steps[i];
+      plan(times[i], sim); a.update(sim, true, null, false);
+      trace.push({ t: times[i], boost: a.boost, tg: a.tg.gain.value, bov: a.bov.gain.value, armed: a.bovArmed });
+      await ctx.resume();
+    }
+    const buffer = await rendering;
+    stats(buffer, 0, seconds); // finite-sample check over the whole scenario
+    return { a, buffer, trace };
+  };
+  // (a) Spool lag: a throttle step at t=0.2 must leave the turbo clearly below its later steady level.
+  const cold = await turboRender({ speed: 60 }, ['tg', 'turboAir']);
+  check(cold.a.boost === 1, 'first update must seed boost at the current throttle');
+  const spool = await turboScenario(1.6, (t, sim) => { sim.thr = t < 0.2 ? 0.05 : 1; });
+  const spoolEarly = winEnergy(spool.buffer, 0.25, 0.45), spoolMid = winEnergy(spool.buffer, 0.6, 0.8), spoolLate = winEnergy(spool.buffer, 1.2, 1.5);
+  check(spoolEarly > 1e-7 && spoolEarly < spoolLate * 0.4, 'turbo must spool up over time, not jump with throttle');
+  check(spoolMid > spoolEarly * 1.5 && spoolMid < spoolLate, 'turbo level must rise toward its steady value');
+  check(spool.trace[1].boost < 0.3 && spool.trace[spool.trace.length - 1].boost > 0.85, 'boost state must lag the throttle step');
+  check(spool.trace[1].tg < spool.trace[5].tg && spool.trace[5].tg < spool.trace[12].tg, 'turbo gain must follow the spool');
+  // (b) Blow-off: sharp lifts from high boost fire a burst; low-boost and gentle lifts do not; it re-arms.
+  const bovPlan = (t, sim) => { sim.thr = (t < 0.5 || (t >= 0.9 && t < 1.6)) ? 1 : 0; };
+  const bov = await turboScenario(2.1, bovPlan);
+  const bovBase1 = winEnergy(bov.buffer, 0.3, 0.5), bovBurst1 = winEnergy(bov.buffer, 0.5, 0.65);
+  const bovBase2 = winEnergy(bov.buffer, 1.35, 1.55), bovBurst2 = winEnergy(bov.buffer, 1.6, 1.75);
+  check(bovBurst1 > bovBase1 * 2, 'sharp lift from high boost must fire a blow-off burst');
+  check(bovBurst2 > bovBase2 * 2, 'blow-off must re-arm after the throttle returns');
+  check(bov.trace.find(p => p.t === 0.5).armed === false && bov.trace.find(p => p.t === 1).armed === true && bov.trace.find(p => p.t === 1.6).armed === false, 'blow-off must disarm on firing and re-arm on throttle');
+  const lowLift = await turboScenario(1.0, (t, sim) => { sim.thr = t < 0.5 ? 0.15 : 0; });
+  check(winEnergy(lowLift.buffer, 0.5, 0.65) < winEnergy(lowLift.buffer, 0.3, 0.5) * 1.1, 'lift from low boost must not fire the blow-off');
+  check(lowLift.trace.every(p => p.armed !== false), 'blow-off must stay armed when boost is low');
+  const gentle = await turboScenario(1.6, (t, sim) => { sim.thr = t < 0.5 ? 1 : Math.max(0, 1 - (t - 0.5) * 1.5); });
+  check(gentle.trace.every(p => p.armed !== false), 'gentle lift must bleed boost off without a blow-off');
+  check(stats((await turboScenario(1.0, bovPlan, ['tg', 'turboAir', 'bov'], 'v6', true)).buffer, 0, 1).peak < 1e-6, 'mute must silence turbo and blow-off');
+  check((await render('v6', { on: false, sim: { speed: 60 } })).peak < 1e-6, 'inactive session must silence turbo/ERS');
+  // (c) Air-rush: broadband energy beside the whistle sine, from the boost-scaled bandpass layer.
+  const whistle = 1800 + expected(v6era, 12000) * 20 * 0.32; // soundRpm = firing Hz * 20 for the V6
+  const airOn = await turboRender({ speed: 60 }, ['tg', 'turboAir']), airOff = await turboRender({ speed: 60 }, ['tg']);
+  const wStart = rate * 0.4, wN = 4096;
+  const pOn = hzPower(airOn.buffer.getChannelData(0), wStart, wN, whistle + 450);
+  const pOff = hzPower(airOff.buffer.getChannelData(0), wStart, wN, whistle + 450);
+  check(pOn > pOff * 5 && pOn > 1e-6, 'turbo must carry broadband air-rush energy beside the sine');
+  check(Math.abs(airOn.a.turboAir.f.frequency.value - whistle) < 1, 'air-rush band must track the whistle frequency');
+  check(Math.abs(airOn.a.tg.gain.value - 0.012 * expected(v6era, 12000) * 20 / 12500) < 1e-4, 'turbo level formula must keep its 0.012 scale, driven by boost');
+  check(Math.abs(airOn.a.turboAir.gain.value - 0.05 * expected(v6era, 12000) * 20 / 12500) < 1e-4, 'air-rush level must stay conservative');
+  const wHz = dominantHz(airOn.buffer.getChannelData(0), wStart, wN, whistle * 0.9, whistle * 1.1, 2);
+  check(Math.abs(wHz - whistle) < 60, 'whistle body must stay at 1800 + rpm*0.32: ' + wHz + ' vs ' + whistle.toFixed(0));
+  // (d) ERS: measurable 2nd harmonic while deploying; deploy/harvest/overtake levels unchanged.
+  const ers = await turboRender({ speed: 60, overtake: true }, ['ersG']);
+  const f0 = 700 + 60 * 42, eStart = rate * 0.45, eN = 4096;
+  const p1 = hzPower(ers.buffer.getChannelData(0), eStart, eN, f0), p2 = hzPower(ers.buffer.getChannelData(0), eStart, eN, f0 * 2);
+  check(p2 > p1 * 0.03 && p2 > 1e-6, 'ERS whine must carry a measurable 2nd harmonic');
+  check(Math.abs(ers.a.ersG.gain.value - 0.03) < 1e-9, 'overtake deploy level must stay 0.03');
+  check(Math.abs((await turboRender({ speed: 60 }, ['ersG'])).a.ersG.gain.value - 0.018) < 1e-9, 'normal deploy level must stay 0.018');
+  check(Math.abs((await turboRender({ speed: 30, thr: 0, brk: 0.8 }, ['ersG'])).a.ersG.gain.value - 0.022 * 0.8) < 1e-9, 'harvest level must stay 0.022*brk');
+  const ersIdle = await turboRender({ speed: 60, thr: 0 }, ['ersG']);
+  check(ersIdle.peak < 1e-6 && ersIdle.a.ersG.gain.value === 0, 'ERS must stay silent when not deploying or harvesting');
+  // (e) Era gating: every turbo/ERS voice stays silent in the non-turbo eras, even on a lift edge.
+  for (const id of ['v8', 'v10', 'v12']) {
+    const g = await turboRender({ speed: 60, overtake: true }, ['tg', 'turboAir', 'bov', 'ersG'], id);
+    check(g.a.tg.gain.value < 1e-6 && g.a.turboAir.gain.value < 1e-6 && g.a.bov.gain.value < 1e-6 && g.a.ersG.gain.value < 1e-6, id + ': turbo/ERS voices must stay silent');
+    check(g.peak < 1e-6, id + ': isolated turbo/ERS render must be silent');
+  }
+  const bovV10 = await turboScenario(1.0, bovPlan, ['tg', 'turboAir', 'bov'], 'v10');
+  check(bovV10.trace.every(p => p.armed !== false) && stats(bovV10.buffer, 0, 1).peak < 1e-6, 'blow-off must be turbo-era only');
+  lines.push('PASS: V6 turbo — spool early/late energy ' + (spoolEarly / spoolLate).toFixed(2) + ' (boost ' + spool.trace[1].boost.toFixed(2) + ' -> ' + spool.trace[spool.trace.length - 1].boost.toFixed(2) + '); BOV bursts ' + (bovBurst1 / bovBase1).toFixed(1) + 'x/' + (bovBurst2 / bovBase2).toFixed(1) + 'x baseline, low/gentle lifts silent, re-arms; air-rush ' + (pOn / Math.max(pOff, 1e-12)).toFixed(0) + 'x off-band power at ' + whistle.toFixed(0) + ' Hz; ERS 2nd harmonic ' + (p2 / p1).toFixed(2) + ' of fundamental; era gating, mute/pause silent.');
+
+  // Overrun: coasting above the era's own crackle threshold gets a hollow exhaust burble (dark noise
+  // chopped at the firing order) under a deeper lowpass. The threshold is era-relative — 40% of the
+  // turbo V6's range (it crackles readily on lift), 55% for the high-rev NA eras — exposed as
+  // crackleRpm() so the condition is testable without Poisson statistics.
+  // Probes pin Math.random (the draw always fires when the condition holds) and preset lastTime so
+  // dt > 0 on the first frame; burble/lp params carry no randomness, so every check here is exact.
+  const crackleThreshold = era => era.idle + (era.turbo ? 0.4 : 0.55) * (era.redline - era.idle);
+  const probeAudio = new EngineAudio();
+  for (const era of ENGINE_ERAS) {
+    check(probeAudio.crackleRpm(era) === crackleThreshold(era), era.id + ': crackle threshold must be the era-relative fraction');
+    check(crackleThreshold(era) > era.idle && crackleThreshold(era) < era.redline, era.id + ': threshold outside the era range');
+  }
+  check(probeAudio.crackleRpm(ENGINE_ERAS[2]) > probeAudio.crackleRpm(ENGINE_ERAS[1]) && probeAudio.crackleRpm(ENGINE_ERAS[1]) > probeAudio.crackleRpm(ENGINE_ERAS[3]) && probeAudio.crackleRpm(ENGINE_ERAS[3]) > probeAudio.crackleRpm(ENGINE_ERAS[0]), 'thresholds must follow the era rev ranges');
+  // The linear soundRpm map puts the turbo threshold at drivetrain fraction 0.4 (~7,520 rpm) and each
+  // NA threshold at 0.55 (~8,840 rpm) — distinct physical triggers, not one shared midpoint.
+  for (const era of ENGINE_ERAS) {
+    const crossRpm = CAR.idle + (era.turbo ? 0.4 : 0.55) * (CAR.limiter - CAR.idle);
+    const sr = era.idle + (crossRpm - CAR.idle) / (CAR.limiter - CAR.idle) * (era.redline - era.idle);
+    check(Math.abs(sr - crackleThreshold(era)) < 1e-9, era.id + ': threshold must sit at its own drivetrain fraction');
+  }
+  // Params only reflect automation after rendering (or at a suspend point), so probes render. Zeroing
+  // synthG (not disconnecting — orphaned nodes stop processing and their params freeze) silences the
+  // engine and burble audio while the pop path stays live; Math.random pinned makes firing exact.
+  const overrunProbe = async (id, rpm, thr = 0) => {
+    const ctx = new OfflineAudioContext(2, rate * 0.65, rate), a = new EngineAudio();
+    a.init(ctx); a.lastTime = -0.05; // a live 50 ms frame so the Poisson draw can fire
+    const real = Math.random; Math.random = () => 0;
+    try { a.update(Object.assign(state(id), { rpm, thr }), true, null, false); } finally { Math.random = real; }
+    a.synthG.gain.cancelScheduledValues(0); a.synthG.gain.setValueAtTime(0, 0);
+    for (const g of [a.wind, a.rumble, a.gravel, a.grass, a.hit, a.rain, a.spray, a.tg, a.turboAir, a.bov, a.ersG]) g.disconnect(a.master);
+    for (const v of a.opps) (v.pan || v.g).disconnect(a.master);
+    for (const s of a.squeals) (s.pan || s.g).disconnect(a.master);
+    a.verbG.disconnect(a.master);
+    const buffer = await ctx.startRendering();
+    return { a, popRms: stats(buffer, 0, 0.15).rms };
+  };
+  for (const era of ENGINE_ERAS) {
+    // Straddle each era's own physical trigger (v6 ~7,520, NA ~8,840 drivetrain rpm) with 300 rpm margins.
+    const cross = CAR.idle + (era.turbo ? 0.4 : 0.55) * (CAR.limiter - CAR.idle);
+    const below = await overrunProbe(era.id, cross - 300), above = await overrunProbe(era.id, cross + 300);
+    check(below.popRms < 1e-6 && below.a.burble.gain.value === 0, era.id + ': no crackle/burble below the era threshold');
+    // The pop lands inside the master fade-in, so its measured RMS is ~7e-5; 2e-5 keeps a 3x margin.
+    check(above.popRms > 2e-5, era.id + ': crackle must fire above the era threshold');
+    check(above.a.burble.gain.value > 0 && above.a.burbleG.gain.value > 0, era.id + ': overrun burble must engage above the threshold');
+    const coast = await overrunProbe(era.id, 12000), throttled = await overrunProbe(era.id, 12000, 0.3);
+    check(throttled.popRms < 1e-6 && throttled.a.burble.gain.value === 0, era.id + ': throttle must keep the overrun voice silent');
+    check(coast.a.lp.frequency.value < throttled.a.lp.frequency.value * 0.6, era.id + ': overrun must deepen the lowpass');
+  }
+  // The downshift blip is intentional throttle: neither burble nor crackle may run inside its window.
+  // Suspend points let the shift crack decay so a crackle pop (or its absence) is unambiguous. Params
+  // reflect rendering up to the suspend, so each read captures the PREVIOUS update's effect.
+  const ovBlipCtx = new OfflineAudioContext(2, rate * 0.65, rate), ovBlipA = new EngineAudio();
+  ovBlipA.init(ovBlipCtx);
+  const ovBlipSim = state('v10'); // rpm 12000, thr 1, gear 5
+  ovBlipA.update(ovBlipSim, true, null, false);
+  const ovBlipSteps = [0.2, 0.25, 0.3].map(t => ovBlipCtx.suspend(t));
+  const ovBlipRendering = ovBlipCtx.startRendering();
+  const realRandom = Math.random; Math.random = () => 0;
+  const ovBlipTrace = [];
+  try {
+    for (let i = 0; i < ovBlipSteps.length; i++) {
+      await ovBlipSteps[i];
+      if (i > 0) ovBlipTrace.push({ pop: ovBlipA.pop.gain.value, burble: ovBlipA.burble.gain.value, inBlip: ovBlipCtx.currentTime < ovBlipA.blipT });
+      if (i === 0) { ovBlipSim.gear = 4; ovBlipSim.thr = 0; } // downshift: crack + 120 ms blip
+      ovBlipA.update(ovBlipSim, true, null, false);
+      await ovBlipCtx.resume();
+    }
+  } finally { Math.random = realRandom; }
+  await ovBlipRendering;
+  check(ovBlipTrace[0].inBlip && ovBlipTrace[0].burble === 0 && ovBlipTrace[0].pop > 0.1, 'downshift blip must not start the overrun burble or crackle');
+  check(ovBlipTrace[1].inBlip && ovBlipTrace[1].burble === 0 && ovBlipTrace[1].pop > 0.02, 'blip window must keep burble and crackle out');
+  // Lift-off transition on a running graph: burble stays out through the blip, then fades in smoothly
+  // while the lowpass deepens to the coast cut.
+  const ovCtx = new OfflineAudioContext(2, rate * 1.1, rate), ovA = new EngineAudio(), ovSim = state('v10');
+  ovA.init(ovCtx);
+  const ovPlan = t => { if (t >= 0.2) { ovSim.gear = 4; ovSim.thr = 0; } };
+  ovPlan(0); ovA.update(ovSim, true, null, false);
+  const ovTimes = [0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 1.05]; // last step is read-only
+  const ovSteps = ovTimes.map(t => ovCtx.suspend(t));
+  const ovRendering = ovCtx.startRendering();
+  const ovTrace = [];
+  for (let i = 0; i < ovSteps.length; i++) {
+    await ovSteps[i];
+    ovTrace.push({ t: ovTimes[i], burble: ovA.burble.gain.value, lp: ovA.lp.frequency.value, inBlip: ovTimes[i] < ovA.blipT });
+    if (i < ovTimes.length - 1) { ovPlan(ovTimes[i]); ovA.update(ovSim, true, null, false); }
+    await ovCtx.resume();
+  }
+  const ovBuf = await ovRendering;
+  // trace[k] reflects the update at ovTimes[k-1]: 0.3/0.4 read the inside-blip updates, 0.6 the first coast update.
+  check(ovTrace[0].burble === 0 && ovTrace[1].burble === 0 && ovTrace[2].burble === 0 && ovTrace[3].burble === 0 && ovTrace[2].inBlip, 'burble must stay out through the downshift blip');
+  check(ovTrace[4].burble > 0 && ovTrace[5].burble > ovTrace[4].burble * 0.9, 'burble must fade in smoothly after the blip');
+  check(ovTrace[5].lp < ovTrace[0].lp * 0.4, 'overrun must darken the exhaust lowpass');
+  const ovSr = ENGINE_ERAS[2].idle + (12000 - CAR.idle) / (CAR.limiter - CAR.idle) * (ENGINE_ERAS[2].redline - ENGINE_ERAS[2].idle);
+  const ovOver = Math.max(0, Math.min(1, (ovSr - crackleThreshold(ENGINE_ERAS[2])) / (ENGINE_ERAS[2].redline - crackleThreshold(ENGINE_ERAS[2]))));
+  check(Math.abs(ovTrace[5].lp - (900 + ovSr * 0.1) * (1 - 0.5 * ovOver)) < 25, 'overrun lowpass must settle at the deep coast cut');
+  check(stats(ovBuf, 0, 1.1).peak < 0.95, 'overrun transition must stay unclipped');
+  // Isolated engine renders (dry engine path only, wet return and every other voice dropped). The
+  // burble feeds synthG, so disconnecting the shaper leaves the burble alone for band measurements.
+  const engineOnly = async (id, extra, burbleOnly = false) => {
+    const ctx = new OfflineAudioContext(2, rate * 0.65, rate), a = new EngineAudio();
+    a.init(ctx); if (id === 'v12') a.v12Loading = Promise.resolve(false);
+    a.update(Object.assign(state(id), extra), true, null, false);
+    if (burbleOnly) { a.shaper.disconnect(a.synthG); if (a.v12Loops) for (const l of a.v12Loops) l.gain.disconnect(a.lp); }
+    for (const g of [a.wind, a.rumble, a.gravel, a.grass, a.hit, a.pop, a.rain, a.spray, a.tg, a.turboAir, a.bov, a.ersG]) g.disconnect(a.master);
+    for (const v of a.opps) (v.pan || v.g).disconnect(a.master);
+    for (const s of a.squeals) (s.pan || s.g).disconnect(a.master);
+    a.verbG.disconnect(a.master);
+    const buffer = await ctx.startRendering();
+    return { a, buffer, ...stats(buffer) };
+  };
+  const coastMix = await engineOnly('v10', { thr: 0 }), thrMix = await engineOnly('v10', { thr: 0.3 });
+  const lowHigh = r => bandPower(r.buffer.getChannelData(0), 150, 500) / Math.max(bandPower(r.buffer.getChannelData(0), 2000, 6000), 1e-12);
+  check(lowHigh(coastMix) > lowHigh(thrMix) * 2, 'coast must shift energy into the burble band, not just drop level');
+  check(coastMix.brightness < thrMix.brightness * 0.7, 'coast must be spectrally darker than low throttle at the same rpm');
+  check(coastMix.rms < thrMix.rms && coastMix.rms > thrMix.rms * 0.3, 'coast stays quieter but alive');
+  const burbleCoast = await engineOnly('v10', { thr: 0 }, true);
+  const burbleThr = await engineOnly('v10', { thr: 0.3 }, true);
+  const burbleLow = await engineOnly('v10', { thr: 0, rpm: 7000 }, true);
+  check(burbleCoast.rms > 0.002 && burbleCoast.peak < 0.3, 'overrun burble must be audible and conservative');
+  check(burbleThr.peak < 1e-6 && burbleLow.peak < 1e-6, 'burble must be silent on throttle and below the threshold');
+  check(burbleCoast.a.burble.f.frequency.value >= 200 && burbleCoast.a.burble.f.frequency.value <= 500, 'burble must live in the low exhaust band');
+  check(bandPower(burbleCoast.buffer.getChannelData(0), 150, 500) > bandPower(burbleCoast.buffer.getChannelData(0), 2000, 6000) * 3, 'burble energy must stay in the low band');
+  const burbleHi = await engineOnly('v10', { thr: 0, rpm: 12600 }, true);
+  check(burbleHi.a.burble.gain.value > burbleCoast.a.burble.gain.value, 'burble level must rise with rpm');
+  // The chop is audio-rate at the firing order: rectify + a quarter-firing-period moving average keeps
+  // the burble ripple, and its envelope fundamental must sit at f (not a frame-rate flutter).
+  const ovF = expected(ENGINE_ERAS[2], 12000);
+  check(Math.abs(burbleCoast.a.burbleO.frequency.value - ovF) < 1, 'burble gate must run at the firing order');
+  const bEnv = cutEnvelope(burbleCoast.buffer, ovF * 4);
+  const bHz = dominantHz(bEnv, rate * 0.3, rate * 0.3, ovF * 0.8, ovF * 1.2, 2);
+  check(Math.abs(bHz / ovF - 1) < 0.05, 'burble must knock at the firing order: ' + bHz + ' vs ' + ovF.toFixed(1));
+  // Crackle above/below the threshold over a long render: wide statistical margins, pop path isolated
+  // (eg disconnected kills the engine AND the burble; only the pop voice remains on master).
+  const popOnly = async (rpm, seconds) => {
+    const ctx = new OfflineAudioContext(2, rate * seconds, rate), a = new EngineAudio();
+    const sim = Object.assign(state('v10'), { thr: 0, rpm });
+    a.init(ctx); a.update(sim, true, null, false);
+    a.eg.disconnect(a.gate);
+    for (const g of [a.wind, a.rumble, a.gravel, a.grass, a.hit, a.rain, a.spray, a.tg, a.turboAir, a.bov, a.ersG]) g.disconnect(a.master);
+    for (const v of a.opps) (v.pan || v.g).disconnect(a.master);
+    for (const s of a.squeals) (s.pan || s.g).disconnect(a.master);
+    a.verbG.disconnect(a.master);
+    // Crackle is drawn per update with the frame dt, so keep updating through the render.
+    const times = []; for (let t = 0.1; t < seconds - 0.04; t += 0.1) times.push(Math.round(t * 10) / 10);
+    const steps = times.map(t => ctx.suspend(t));
+    const rendering = ctx.startRendering();
+    for (let i = 0; i < steps.length; i++) { await steps[i]; a.update(sim, true, null, false); await ctx.resume(); }
+    const buffer = await rendering;
+    return { a, buffer, ...stats(buffer, 0.1, seconds - 0.05) };
+  };
+  const popsHi = await popOnly(12000, 4), popsLo = await popOnly(6000, 4);
+  check(popsHi.rms > 0.001, 'crackle must keep firing above the threshold');
+  check(popsLo.peak < 1e-6, 'crackle must stay silent well below the threshold');
+  let popCount = 0; const pd = popsHi.buffer.getChannelData(0);
+  for (let i = rate * 0.1, last = -1e9; i < pd.length - rate * 0.05; i++) {
+    if (Math.abs(pd[i]) > 0.01 && i - last > rate * 0.06) { popCount++; last = i; }
+  }
+  check(popCount > 6 && popCount < 90, 'crackle rate must stay in the Poisson range: ' + popCount);
+  check((await render('v10', { muted: true, sim: { thr: 0, rpm: 12000 } })).peak < 1e-6, 'mute must silence the overrun burble');
+  check((await render('v10', { on: false, sim: { thr: 0, rpm: 12000 } })).peak < 1e-6, 'inactive session must silence the overrun burble');
+  lines.push('PASS: overrun — era crackle thresholds ' + ENGINE_ERAS.map(e => e.id + ' ' + probeAudio.crackleRpm(e).toFixed(0)).join('/') + ' rpm (turbo 40% / NA 55% of range); coast low/high band ' + lowHigh(coastMix).toFixed(1) + 'x vs throttle ' + lowHigh(thrMix).toFixed(2) + 'x, brightness ' + coastMix.brightness.toFixed(3) + ' vs ' + thrMix.brightness.toFixed(3) + '; isolated burble RMS ' + burbleCoast.rms.toFixed(4) + ' chopped at ' + bHz.toFixed(0) + ' Hz (firing ' + ovF.toFixed(0) + '), silent on throttle/low rpm/blip; crackle ' + popCount + ' pops/4 s above threshold, silent below; mute/pause silent.');
+
+  // Event sounds: DRS clack, ABS/TC buzzes, start-light pips/go tone. Time evolution uses
+  // suspend/resume (the turbo pattern); isolation follows isolateTurbo — disconnecting eg kills the
+  // engine dry AND its send feed, immune to later update() gain automation.
+  const isolateEvents = (a, keep) => {
+    a.eg.disconnect(a.gate);
+    for (const g of [a.wind, a.rumble, a.gravel, a.grass, a.hit, a.scrape, a.pop, a.drs, a.absBuzz, a.tcBuzz, a.rain, a.spray, a.tg, a.turboAir, a.bov, a.ersG, a.lightG]) g.disconnect(a.master);
+    for (const v of a.opps) (v.pan || v.g).disconnect(a.master);
+    for (const s of a.squeals) (s.pan || s.g).disconnect(a.master);
+    a.verbG.disconnect(a.master);
+    for (const name of keep) a[name].connect(a.master);
+  };
+  const eventScenario = async (seconds, plan, keep, muted = false) => {
+    const ctx = new OfflineAudioContext(2, rate * seconds, rate), a = new EngineAudio(), sim = state('v6');
+    a.init(ctx); a.v12Loading = Promise.resolve(false); a.muted = muted;
+    plan(0, sim); a.update(sim, true, null, false, 0, sim.lights || 0);
+    isolateEvents(a, keep);
+    const times = []; for (let t = 0.1; t < seconds - 0.04; t += 0.1) times.push(Math.round(t * 10) / 10);
+    const steps = times.map(t => ctx.suspend(t));
+    const rendering = ctx.startRendering();
+    for (let i = 0; i < steps.length; i++) {
+      await steps[i];
+      plan(times[i], sim); a.update(sim, true, null, false, 0, sim.lights || 0);
+      await ctx.resume();
+    }
+    const buffer = await rendering;
+    stats(buffer, 0, seconds); // finite-sample check over the whole scenario
+    return { a, buffer };
+  };
+  // (a) DRS: a clack on the open AND the close edge, nothing while the state holds.
+  const drsPlan = (t, sim) => { sim.drsOpen = t >= 0.3 && t < 0.8; };
+  const drsOut = await eventScenario(1.2, drsPlan, ['drs']);
+  const drsBase = winEnergy(drsOut.buffer, 0.1, 0.25), drsOpen = winEnergy(drsOut.buffer, 0.3, 0.45), drsMid = winEnergy(drsOut.buffer, 0.55, 0.7), drsClose = winEnergy(drsOut.buffer, 0.8, 0.95), drsTail = winEnergy(drsOut.buffer, 1.0, 1.15);
+  check(drsOpen > 1e-7 && drsOpen > drsBase * 4, 'DRS open must fire a clack');
+  check(drsClose > 1e-7 && drsClose > drsTail * 4, 'DRS close must fire a clack');
+  check(drsMid < drsOpen * 0.2 && drsBase < drsOpen * 0.2 && drsTail < drsClose * 0.2, 'DRS clack must be a short transient, not a held noise');
+  const drsStill = await eventScenario(0.8, (t, sim) => { sim.drsOpen = true; }, ['drs']);
+  check(stats(drsStill.buffer, 0, 0.8).peak < 1e-6, 'unchanged DRS state must stay silent');
+  check(stats((await eventScenario(1.2, drsPlan, ['drs'], true)).buffer, 0, 1.2).peak < 1e-6, 'mute must silence the DRS clack');
+  check((await render('v6', { on: false, sim: { drsOpen: true } })).peak < 1e-6, 'inactive session must silence DRS');
+  lines.push('PASS: DRS clack — open/baseline ' + (drsOpen / Math.max(drsBase, 1e-12)).toFixed(0) + 'x, close/tail ' + (drsClose / Math.max(drsTail, 1e-12)).toFixed(0) + 'x; decays between edges, silent when unchanged/muted/paused.');
+
+  // (b) ABS/TC: pulsing buzzes while the assists intervene — audio-rate square gates (the kerb
+  // pattern), distinct rates and bands, levels well under the engine, silent otherwise.
+  const buzzRender = async (extra, keep) => {
+    const ctx = new OfflineAudioContext(2, rate * 0.65, rate), a = new EngineAudio();
+    a.init(ctx); a.v12Loading = Promise.resolve(false);
+    a.update(Object.assign(state('v6'), extra), true, null, false);
+    isolateEvents(a, keep);
+    const buffer = await ctx.startRendering();
+    return { a, buffer, ...stats(buffer) };
+  };
+  const absR = await buzzRender({ absActive: true, brk: 0.9, thr: 0, rpm: 8000 }, ['absBuzz']);
+  const tcR = await buzzRender({ tcActive: true }, ['tcBuzz']);
+  check(absR.rms > 0.002 && tcR.rms > 0.002, 'ABS/TC buzzes must be audible while active');
+  check(absR.peak < 0.1 && tcR.peak < 0.1, 'assist buzzes must stay conservative');
+  const absEnv = cutEnvelope(absR.buffer, 550), tcEnv = cutEnvelope(tcR.buffer, 1500);
+  const absHz = dominantHz(absEnv, cutStart, cutN, 8, 17, 0.5), tcHz = dominantHz(tcEnv, cutStart, cutN, 19, 38, 0.5);
+  check(Math.abs(absHz / 12 - 1) < 0.08, 'ABS buzz must pulse at its gate rate: ' + absHz);
+  check(Math.abs(tcHz / 27 - 1) < 0.08, 'TC buzz must pulse at its gate rate: ' + tcHz);
+  const swing = env => { let lo = Infinity, hi = 0, mean = 0; for (let i = cutStart; i < cutStart + cutN; i++) { lo = Math.min(lo, env[i]); hi = Math.max(hi, env[i]); mean += env[i]; } return (hi - lo) / (mean / cutN); };
+  check(swing(absEnv) > 0.5 && swing(tcEnv) > 0.5, 'assist buzzes must pulse, not hiss constantly');
+  check(tcHz > absHz * 1.5 && absR.a.absBuzz.f.frequency.value < tcR.a.tcBuzz.f.frequency.value * 0.5, 'ABS and TC must have distinct characters');
+  check(absR.a.absBuzz.gain.value + absR.a.absG.gain.value <= 0.07 + 1e-6 && tcR.a.tcBuzz.gain.value + tcR.a.tcG.gain.value <= 0.06 + 1e-6, 'assist peaks must stay well under the engine (0.38)');
+  const buzzQuiet = await buzzRender({}, ['absBuzz', 'tcBuzz']);
+  check(buzzQuiet.peak < 1e-6, 'no assist intervention must be silent');
+  check(absR.a.tcBuzz.gain.value === 0 && tcR.a.absBuzz.gain.value === 0, 'ABS and TC must not cross-trigger');
+  check((await render('v6', { muted: true, sim: { absActive: true, tcActive: true } })).peak < 1e-6, 'mute must silence assist buzzes');
+  check((await render('v6', { on: false, sim: { absActive: true, tcActive: true } })).peak < 1e-6, 'inactive session must silence assist buzzes');
+  lines.push('PASS: ABS/TC buzz — ABS ' + absHz.toFixed(1) + ' Hz pulse at ' + absR.a.absBuzz.f.frequency.value + ' Hz band (swing ' + swing(absEnv).toFixed(2) + '), TC ' + tcHz.toFixed(1) + ' Hz at ' + tcR.a.tcBuzz.f.frequency.value + ' Hz (swing ' + swing(tcEnv).toFixed(2) + '); RMS ' + absR.rms.toFixed(4) + '/' + tcR.rms.toFixed(4) + ', silent when inactive/muted/paused.');
+
+  // (c) Start lights: a pip on each increment, a higher/longer go tone on 5→0, silence while held.
+  const lightsPlan = (t, sim) => { sim.lights = t < 1 ? 0 : t < 6 ? Math.min(5, Math.floor(t)) : 0; };
+  const lightsOut = await eventScenario(6.8, lightsPlan, ['lightG']);
+  const pipE = [], preE = [];
+  for (let k = 1; k <= 5; k++) { pipE.push(winEnergy(lightsOut.buffer, k, k + 0.15)); preE.push(winEnergy(lightsOut.buffer, k - 0.25, k - 0.05)); }
+  for (let k = 0; k < 5; k++) check(pipE[k] > 1e-7 && pipE[k] > preE[k] * 4, 'light ' + (k + 1) + ' must pip');
+  const goE = winEnergy(lightsOut.buffer, 6, 6.4);
+  check(goE > pipE[4] * 2, 'lights-out go tone must be longer/louder than a pip');
+  check(winEnergy(lightsOut.buffer, 1.5, 1.9) < pipE[0] * 0.1, 'no sound while the light count holds');
+  const pipHz = dominantHz(lightsOut.buffer.getChannelData(0), Math.round(rate * 1.005), 4096, 700, 1500, 2);
+  const goHz = dominantHz(lightsOut.buffer.getChannelData(0), Math.round(rate * 6.01), 4096, 700, 1600, 2);
+  check(Math.abs(pipHz / 880 - 1) < 0.03 && Math.abs(goHz / 1318 - 1) < 0.03 && goHz > pipHz * 1.3, 'go tone must be higher than the pips: ' + pipHz + '/' + goHz);
+  check(stats((await eventScenario(6.8, lightsPlan, ['lightG'], true)).buffer, 0, 6.8).peak < 1e-6, 'mute must silence the start lights');
+  check((await buzzRender({}, ['lightG'])).peak < 1e-6, 'omitted lights argument must stay silent');
+  lines.push('PASS: start lights — pips at ' + pipHz + ' Hz on all five increments, go tone ' + goHz + ' Hz at ' + (goE / pipE[4]).toFixed(1) + 'x pip energy on 5→0; silent while held and muted.');
+
+  // (d) Volume: master gain = muted ? 0 : 0.5*volume, clamped; rendered RMS scales with it.
+  const volFull = await render('v6'), volHalf = await render('v6', { volume: 0.5 });
+  check(volFull.audio.volume === 1, 'default volume must be 1');
+  check(Math.abs(volHalf.rms / volFull.rms - 0.5) < 0.1, 'volume 0.5 must render ~half RMS: ' + (volHalf.rms / volFull.rms).toFixed(3));
+  check((await render('v6', { volume: 0 })).peak < 1e-6, 'volume 0 must be silent');
+  check((await render('v6', { volume: 1, muted: true })).peak < 1e-6, 'mute must override volume');
+  check(Math.abs(volHalf.audio.master.gain.value - 0.25) < 0.002, 'master gain must be 0.5*volume');
+  check(Math.abs((await render('v6', { volume: 5 })).audio.master.gain.value - 0.5) < 0.002, 'volume must clamp to 1');
+  check((await render('v6', { volume: -1 })).audio.master.gain.value === 0, 'negative volume must clamp to 0');
+  lines.push('PASS: volume — RMS ratio at 0.5: ' + (volHalf.rms / volFull.rms).toFixed(3) + '; 0 silent, mute overrides, master gain 0.5*volume clamped 0..1.');
+
+  // (e) Impact: capped thud + proportional scrape. Measured on this engine's compressor (sine
+  // probe): ~+2.8 dB fixed makeup below ~0.3 peak, active ducking above it (gain 1.30 at 0.4 peak,
+  // 0.96 at 0.8). The old 2.0 thud cap put crash peaks at 0.55-0.62 — into the active region on
+  // every crash, pumping the mix; the 0.5 cap keeps worst-case peaks ~0.40, at the onset's edge.
+  const impactScenario = async (impact, era = 'v6', thr = 1) => {
+    const ctx = new OfflineAudioContext(2, rate * 1.6, rate), a = new EngineAudio(), sim = state(era);
+    sim.thr = thr;
+    a.init(ctx); a.v12Loading = Promise.resolve(false);
+    a.update(sim, true, null, false);
+    const steps = [0.4, 0.5].map(t => ctx.suspend(t));
+    const rendering = ctx.startRendering();
+    await steps[0]; sim.impact = impact; a.update(sim, true, null, false); await ctx.resume();
+    await steps[1]; sim.impact = 0; a.update(sim, true, null, false); await ctx.resume();
+    return { a, buffer: await rendering };
+  };
+  const impactOnly = async (impact, keep) => {
+    const ctx = new OfflineAudioContext(2, rate * 0.8, rate), a = new EngineAudio(), sim = state('v6');
+    a.init(ctx); a.v12Loading = Promise.resolve(false);
+    a.update(sim, true, null, false);
+    isolateEvents(a, keep);
+    const step = ctx.suspend(0.3); // let the master fade-in settle before the crash
+    const rendering = ctx.startRendering();
+    await step; sim.impact = impact; a.update(sim, true, null, false); await ctx.resume();
+    const buffer = await rendering;
+    return { a, buffer, ...stats(buffer, 0.3, 0.75) };
+  };
+  // Audible metal: the isolated crash is loud, and the scrape brightens it and scales with impact.
+  const crash12 = await impactOnly(12, ['hit', 'scrape']), thud12 = await impactOnly(12, ['hit']);
+  check(crash12.rms > 0.01 && crash12.peak > 0.05, 'impact must stay clearly audible');
+  check(crash12.brightness > thud12.brightness * 1.5, 'scrape layer must add high-frequency metal');
+  const scrape12 = await impactOnly(12, ['scrape']), scrape6 = await impactOnly(6, ['scrape']);
+  const scrapeE = r => winEnergy(r.buffer, 0.3, 0.55);
+  check(scrapeE(scrape12) > scrapeE(scrape6) * 2.5 && scrapeE(scrape12) < scrapeE(scrape6) * 6, 'scrape level must scale with impact: ' + (scrapeE(scrape12) / scrapeE(scrape6)).toFixed(2));
+  // Thud cap: identical decayed gain for impacts 12 and 30; still proportional below the cap (3 → 0.375).
+  const crash30 = await impactOnly(30, ['hit']), crash3 = await impactOnly(3, ['hit']);
+  check(Math.abs(crash30.a.hit.gain.value - thud12.a.hit.gain.value) < 1e-6, 'thud must cap for heavy impacts');
+  check(Math.abs(crash3.a.hit.gain.value / thud12.a.hit.gain.value - 0.75) < 1e-3, 'thud must stay proportional below the cap');
+  // No pump: post-impact engine firing-band power within 15% of the no-impact baseline, at full
+  // throttle and at low throttle (quiet engine, crash dominates). V10's 1470 Hz firing order sits
+  // well above the thud's 300 Hz lowpass, keeping the Goertzel bin clean of crash noise.
+  const pumpWindows = [[0.5, 0.3], [0.7, 0.3], [1.0, 0.4]];
+  const pumpRatio = (r, base, hz, s, l) => hzPower(r.buffer.getChannelData(0), rate * s, rate * l, hz) / hzPower(base.buffer.getChannelData(0), rate * s, rate * l, hz);
+  const fFire = expected(v6era, 12000), f10 = expected(v10era, 12000);
+  const impBase = await impactScenario(0), imp12 = await impactScenario(12), imp30 = await impactScenario(30);
+  const qBase = await impactScenario(0, 'v10', 0.15), q12 = await impactScenario(12, 'v10', 0.15), q30 = await impactScenario(30, 'v10', 0.15);
+  let worst = 1, worstDev = 0;
+  for (const [r, base, hz] of [[imp12, impBase, fFire], [imp30, impBase, fFire], [q12, qBase, f10], [q30, qBase, f10]]) {
+    for (const [s, l] of pumpWindows) {
+      const ratio = pumpRatio(r, base, hz, s, l);
+      check(ratio > 0.85 && ratio < 1.15, 'post-impact engine power must not pump: ' + ratio.toFixed(3) + ' at ' + s + '-' + (s + l) + ' s');
+      if (Math.abs(ratio - 1) > worstDev) { worstDev = Math.abs(ratio - 1); worst = ratio; }
+    }
+  }
+  // Crash peaks stay below the compressor's measured active region, and the crash is plainly
+  // present in the full mix: at low throttle (a lift/brake crash) it lifts the window peak and energy.
+  check(stats(imp30.buffer, 0.4, 0.7).peak < 0.45, 'crash peak must stay out of the compressor active region: ' + stats(imp30.buffer, 0.4, 0.7).peak.toFixed(3));
+  const qPeak = stats(q12.buffer, 0.4, 0.7).peak, qBasePeak = stats(qBase.buffer, 0.4, 0.7).peak;
+  check(qPeak > qBasePeak * 1.2, 'crash must be clearly audible over a quiet engine: ' + (qPeak / qBasePeak).toFixed(2) + 'x');
+  check(winEnergy(q12.buffer, 0.4, 0.5) > winEnergy(qBase.buffer, 0.4, 0.5) * 1.15, 'crash must add energy to the mix');
+  // Impact voices feed the trackside send; mute/pause silence them.
+  const sendCtx = new OfflineAudioContext(2, rate * 0.8, rate), sendA = new EngineAudio(), sendSim = state('v6');
+  sendA.init(sendCtx); sendA.update(sendSim, true, null, false, 7.4);
+  isolateEvents(sendA, []);
+  sendA.send.disconnect(sendA.verb); sendA.verb.disconnect(sendA.verbG); sendA.send.connect(sendA.verbG); sendA.verbG.connect(sendA.master);
+  const sendStep = sendCtx.suspend(0.3);
+  const sendRendering = sendCtx.startRendering();
+  await sendStep; sendSim.impact = 12; sendA.update(sendSim, true, null, false, 7.4); await sendCtx.resume();
+  check(stats(await sendRendering, 0.3, 0.75).rms > 0.0005, 'impact must feed the trackside send');
+  check((await render('v6', { muted: true, sim: { impact: 12 } })).peak < 1e-6, 'mute must silence impacts');
+  check((await render('v6', { on: false, sim: { impact: 12 } })).peak < 1e-6, 'inactive session must silence impacts');
+  lines.push('PASS: impact — cap 0.5 (crash peak ' + stats(imp30.buffer, 0.4, 0.7).peak.toFixed(3) + ' < 0.45 compressor onset); worst post-impact pump ratio ' + worst.toFixed(3) + ' (bound 0.85-1.15) across full/low throttle, impacts 12/30; isolated crash RMS ' + crash12.rms.toFixed(4) + ', scrape ' + (scrapeE(scrape12) / scrapeE(scrape6)).toFixed(1) + 'x at impact 12 vs 6, brightness ' + crash12.brightness.toFixed(3) + ' vs thud ' + thud12.brightness.toFixed(3) + '; low-throttle crash peak ' + (qPeak / qBasePeak).toFixed(2) + 'x baseline, energy ' + (winEnergy(q12.buffer, 0.4, 0.5) / winEnergy(qBase.buffer, 0.4, 0.5)).toFixed(2) + 'x; send tap, mute/pause silent.');
 
   // Run the actual standalone menu code, stubbing only WebGL and rig hardware.
   const frame = document.getElementById('settings'), key = 'apexgp.settings.v1', saved = localStorage.getItem(key);
   try {
     const html = (await (await fetch('../docs/index.html')).text()).replace(/<script src="[^"]*"><\/script>/g, '');
     const stub = `<script src="/docs/game.js"><\/script><script>
-      window.THREE = {}; window.ApexRig = {RigControls:class {mount(){} allDevices(){return []}}};
+      window.THREE = {}; window.ApexOverlay = {createTrace:() => ({}), drawInputs(){}}; window.ApexRig = {valid:() => true, RigControls:class {constructor(){this.profile={};this.hid={};} mount(){} allDevices(){return []} reconnect(){return Promise.resolve(false)}}};
       ApexGP.create = (canvas, opts) => {
         window.creationSetup = opts.setup;
         setTimeout(() => opts.onTelemetry({phase:'menu',ready:true,camera:'CHASE',fxq:0,fxAuto:false,fps:60}), 0);
-        return {track:{N:4,L:4200,name:'Test circuit',turns:10,px:[0,100,100,0],pz:[0,0,100,100]},sim:{setup:opts.setup},overview(){},destroy(){},team(){},graphics(){},camera(){},pause(){},begin(s){window.begun=s;}};
+        return {track:{N:4,L:4200,name:'Test circuit',turns:10,px:[0,100,100,0],pz:[0,0,100,100]},sim:{setup:opts.setup},overview(){},destroy(){},team(){},graphics(){},camera(){},pause(){},volume(v){window.volumeApplied=v;},begin(s){window.begun=s;}};
       };<\/script>`;
     const load = async settings => {
       localStorage.setItem(key, JSON.stringify(settings));
@@ -186,10 +941,31 @@
     check(select.getBoundingClientRect().right <= frame.clientWidth, 'engine selector overflows narrow menu');
     win = await load({engineEra:'corrupt'});
     check(win.document.getElementById('engineEra').value === 'v6', 'corrupt saved era fallback');
+    // Volume slider: native range beside Engine sound — default, persist, live apply, restore, fallback.
+    let slider = win.document.getElementById('volume');
+    check(slider && slider.type === 'range' && slider.min === '0' && slider.max === '100', 'volume slider must be a native 0-100 range');
+    check(slider.labels[0].textContent.includes('Volume'), 'volume slider needs a visible accessible label');
+    check(slider.value === '100' && win.creationSetup.volume === 1, 'settings without volume must default to 1');
+    slider.value = '40'; slider.dispatchEvent(new Event('input'));
+    check(JSON.parse(localStorage.getItem(key)).volume === 0.4, 'volume not persisted');
+    check(JSON.parse(localStorage.getItem(key)).engineEra === 'v6', 'volume must preserve other settings');
+    check(win.volumeApplied === 0.4, 'volume must apply live to a running game');
+    check(win.document.getElementById('volumeVal').textContent === '40%', 'volume readout must follow the slider');
+    win.document.getElementById('go').click(); check(win.begun.volume === 0.4, 'volume missing from game.begin');
+    win = await load(JSON.parse(localStorage.getItem(key)));
+    slider = win.document.getElementById('volume');
+    check(slider.value === '40' && win.creationSetup.volume === 0.4, 'reload lost volume');
+    const circuit2 = [...win.document.querySelectorAll('#sessionOpts button')].find(b => b.textContent.startsWith('Circuit'));
+    circuit2.click(); check(win.creationSetup.volume === 0.4, 'changing circuit lost volume');
+    for (const bad of [{ volume: 'loud' }, { volume: 5 }, { volume: -0.5 }, { volume: null }, { tc: false }]) {
+      win = await load(bad);
+      check(win.document.getElementById('volume').value === '100' && win.creationSetup.volume === 1, 'old/corrupt volume must fall back to default: ' + JSON.stringify(bad));
+    }
+    check(win.document.getElementById('volume').getBoundingClientRect().right <= frame.clientWidth, 'volume slider overflows narrow menu');
     // Leave the most useful era visible for visual inspection.
     select = win.document.getElementById('engineEra'); select.value = 'v10'; select.dispatchEvent(new Event('change'));
     frame.style.width = '100%';
-    lines.push('PASS: settings labels, four choices, old/corrupt data, save/reload, begin, circuit changes and narrow layout; no WebGL or hardware.');
+    lines.push('PASS: settings labels, four choices, old/corrupt data, save/reload, begin, circuit changes and narrow layout; volume slider persists/restores/live-applies with fallback; no WebGL or hardware.');
   } finally {
     if (saved === null) localStorage.removeItem(key); else localStorage.setItem(key, saved);
   }

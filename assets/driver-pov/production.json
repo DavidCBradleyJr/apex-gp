@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-13",
+  "purpose": "Improve the existing browser cockpit hands and surface rendering",
+  "status": "Integrated visual improvement; provisional anatomy and animation",
+  "new_tripo_credits": 0,
+  "source": {
+    "job_id": "2e6cb0a3-7884-4ec9-b05f-33d438f83c10",
+    "provider": "Tripo Studio H3.1",
+    "ledger": "../f1-2026/production.json",
+    "original": "../f1-2026/models/ferrari/pov/glove/revision/source/textured-2e6cb0a3.glb",
+    "atlas_original": "../f1-2026/models/ferrari/pov/glove/revision/derivatives/atlas-2k.glb",
+    "preserved_copy": "source/glove-atlas-revision.glb",
+    "sha256": "365bc96a587fb46e74e885ec81a48eaf0eb404ccb294a2ea71a9444a53ed344e",
+    "triangles": 49174,
+    "reference_basis": "Official replica glove images and existing F1 production record; inferred anatomy, not measured driver dimensions"
+  },
+  "rejected_source_trial": {
+    "job_id": "b87a0a2a-2c2c-4243-bc1b-d1aa4503afbd",
+    "preserved_rig": "source/glove-rig-trial.glb",
+    "sha256": "06c8eaed2cac7e88b981bc966eebcbeabcbbb12d5e62cfa3c31ce09d0256e326",
+    "reason": "Flattened thumb/web and open-looking grip in the actual cockpit despite numerical clearance",
+    "evidence": ["evidence/initial-grip.png", "evidence/initial-grip-recipe.py", "evidence/old-source-grip-recipe.py"]
+  },
+  "derivative": {
+    "file": "derived/driver-left-glove.glb",
+    "authoring_file": "derived/driver-left-glove.blend",
+    "sha256": "875d8de19c30be6d6402be00d80f4c4435e92729bd5487860e12c457f2cf3c07",
+    "bytes": 2751444,
+    "triangles": 31962,
+    "meshes": 1,
+    "materials": 1,
+    "colour_atlas": "2048px source atlas, retained UVs",
+    "skin": false,
+    "animations": false,
+    "recipe": "../../tools/prepare-driver-hands.py",
+    "processing": "Manually placed 17-joint fitting rig with smooth explicit weights; provisional 300mm glove length and 0.6 source-depth factor; finger curl and thumb opposition baked; cuff bend; 65% decimation; fit against sampled runtime grip; normals recalculated; GLB exported and reimported",
+    "contact_fixture": "source/grip-centreline.json",
+    "contact_clearance_mm": 1.5,
+    "export_evidence": "evidence/hand-export.json"
+  },
+  "runtime": {
+    "embedded_script": "../../vendor/driver-hands.js",
+    "instances": 2,
+    "total_hand_triangles": 63924,
+    "right_hand": "Mirrored local Z, shared static geometry and atlas",
+    "steering": "Both hands attached to the existing wheel frame, clamped to +/-180 degrees",
+    "sleeves": "Tapered folded tube meshes with cubic curves following cuff position and wrist direction; fixed shoulders",
+    "loading_failure": "Original capsule hands remain until textured asset loads; retained if loading fails",
+    "materials": "Fabric bump, carbon weave, clearcoated cockpit paint, asphalt/gravel/guardrail bump, retuned daylight/exposure and reduced exterior car metallic response",
+    "frontends": ["../../src/index.html", "../../src/play.html", "../../design/project/Main.dc.html"],
+    "build": "../../build.sh copies engine and embedded assets to docs and Design"
+  },
+  "qualification": {
+    "asset_test": "node test/driver-assets-test.js: PASS; source/export hashes, normals/UVs, shared static mesh, sampled vertex clearance, embedded data and built copies",
+    "browser_test": "test/driver-pov-scene-check.js: PASS; actual asset loading, hidden fallback, geometry/maps, 12 steering samples including beyond-lock clamping, sleeve endpoint contact and wrist direction",
+    "browser_evidence": "evidence/browser-checks.json",
+    "screenshots": ["evidence/cockpit-center.png", "evidence/steer-right.png", "evidence/steer-left-warm.png", "evidence/wet-full-lock-low.png", "evidence/exterior-high.png"],
+    "physics_logs": ["evidence/sim-test.log", "evidence/race-test.log"],
+    "performance": "No controlled GPU or sustained frame-time benchmark; posed Chrome checks only"
+  },
+  "limits": [
+    "This is a browser graphics improvement, not DLSS 5 or neural rendering",
+    "Rigid finger pose and mirrored markings remain; no independent right-hand texture or finger animation",
+    "No anatomically calibrated driver, elbow rig, cloth simulation or hand-over-hand steering; crossed arms at full lock remain approximate",
+    "Sampled vertex clearance is not a continuous triangle collision guarantee",
+    "Raised generated logos, inferred anatomy and occasional cuff/surface imperfections remain",
+    "Exterior car still uses the existing generic source, with baked highlights and approximate geometry",
+    "Existing track reconstruction and wet-road reflections remain approximate"
+  ],
+  "dlss_reference": {
+    "nvidia": "https://www.nvidia.com/en-us/geforce/news/dlss-5-3d-guided-neural-rendering/",
+    "native_integration": "https://github.com/NVIDIA-RTX/Streamline",
+    "decision": "Keep improving the current Three.js/WebGL build. No native engine port or NVIDIA DLSS integration performed."
+  }
+}

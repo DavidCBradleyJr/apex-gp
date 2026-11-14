@@ -1,0 +1,268 @@
+{
+  "date": "2026-11-13",
+  "checks": [
+    {
+      "view": "warm-left",
+      "url": "http://127.0.0.1:8768/src/play.html?track=monza&pose=steer&s=0&cam=2&d=-0.16&line=off&quality=2&check=driver&time=7&team=ferrari",
+      "result": {
+        "status": "PASS",
+        "hands": 2,
+        "triangles": 63924,
+        "quality": 2,
+        "samples": [
+          {
+            "roadAngle": 0,
+            "wheelAngle": 0
+          },
+          {
+            "roadAngle": 0.08,
+            "wheelAngle": 0.7853981633974483
+          },
+          {
+            "roadAngle": -0.08,
+            "wheelAngle": -0.7853981633974483
+          },
+          {
+            "roadAngle": 0.16,
+            "wheelAngle": 1.5707963267948966
+          },
+          {
+            "roadAngle": -0.16,
+            "wheelAngle": -1.5707963267948966
+          },
+          {
+            "roadAngle": 0.24,
+            "wheelAngle": 2.356194490192345
+          },
+          {
+            "roadAngle": -0.24,
+            "wheelAngle": -2.356194490192345
+          },
+          {
+            "roadAngle": 0.32,
+            "wheelAngle": 3.141592653589793
+          },
+          {
+            "roadAngle": -0.32,
+            "wheelAngle": -3.141592653589793
+          },
+          {
+            "roadAngle": 0.5,
+            "wheelAngle": 3.141592653589793
+          },
+          {
+            "roadAngle": -0.5,
+            "wheelAngle": -3.141592653589793
+          },
+          {
+            "roadAngle": 0,
+            "wheelAngle": 0
+          }
+        ],
+        "limitations": "rigid gripping pose; sampled steering, not continuous anatomy or finger animation"
+      }
+    },
+    {
+      "view": "wet-full-lock-low",
+      "url": "http://127.0.0.1:8768/src/play.html?track=monza&pose=steer&s=0&cam=2&d=0.32&line=off&quality=0&check=driver&wet=1",
+      "result": {
+        "status": "PASS",
+        "hands": 2,
+        "triangles": 63924,
+        "quality": 0,
+        "samples": [
+          {
+            "roadAngle": 0,
+            "wheelAngle": 0
+          },
+          {
+            "roadAngle": 0.08,
+            "wheelAngle": 0.7853981633974483
+          },
+          {
+            "roadAngle": -0.08,
+            "wheelAngle": -0.7853981633974483
+          },
+          {
+            "roadAngle": 0.16,
+            "wheelAngle": 1.5707963267948966
+          },
+          {
+            "roadAngle": -0.16,
+            "wheelAngle": -1.5707963267948966
+          },
+          {
+            "roadAngle": 0.24,
+            "wheelAngle": 2.356194490192345
+          },
+          {
+            "roadAngle": -0.24,
+            "wheelAngle": -2.356194490192345
+          },
+          {
+            "roadAngle": 0.32,
+            "wheelAngle": 3.141592653589793
+          },
+          {
+            "roadAngle": -0.32,
+            "wheelAngle": -3.141592653589793
+          },
+          {
+            "roadAngle": 0.5,
+            "wheelAngle": 3.141592653589793
+          },
+          {
+            "roadAngle": -0.5,
+            "wheelAngle": -3.141592653589793
+          },
+          {
+            "roadAngle": 0,
+            "wheelAngle": 0
+          }
+        ],
+        "limitations": "rigid gripping pose; sampled steering, not continuous anatomy or finger animation"
+      }
+    },
+    {
+      "view": "exterior-high",
+      "url": "http://127.0.0.1:8768/src/play.html?track=monza&pose=steer&s=3200&cam=0&d=0&line=off&quality=2&check=1",
+      "result": {
+        "status": "PASS",
+        "treeInstances": 271,
+        "treeBuckets": 16,
+        "clearanceProbes": 435,
+        "quality": 2,
+        "gpu": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3090 Ti/PCIe/SSE2, OpenGL ES 3.2)",
+        "visibleGravelProbes": 3,
+        "forestInstances": 23640,
+        "visibleForestInstances": 9266,
+        "note": "posed browser checks, not a GPU performance benchmark"
+      }
+    },
+    {
+      "view": "day-right",
+      "url": "http://127.0.0.1:8768/src/play.html?track=monza&pose=steer&s=0&cam=2&d=0.16&line=off&quality=2&check=driver",
+      "result": {
+        "status": "PASS",
+        "hands": 2,
+        "triangles": 63924,
+        "quality": 2,
+        "samples": [
+          {
+            "roadAngle": 0,
+            "wheelAngle": 0
+          },
+          {
+            "roadAngle": 0.08,
+            "wheelAngle": 0.7853981633974483
+          },
+          {
+            "roadAngle": -0.08,
+            "wheelAngle": -0.7853981633974483
+          },
+          {
+            "roadAngle": 0.16,
+            "wheelAngle": 1.5707963267948966
+          },
+          {
+            "roadAngle": -0.16,
+            "wheelAngle": -1.5707963267948966
+          },
+          {
+            "roadAngle": 0.24,
+            "wheelAngle": 2.356194490192345
+          },
+          {
+            "roadAngle": -0.24,
+            "wheelAngle": -2.356194490192345
+          },
+          {
+            "roadAngle": 0.32,
+            "wheelAngle": 3.141592653589793
+          },
+          {
+            "roadAngle": -0.32,
+            "wheelAngle": -3.141592653589793
+          },
+          {
+            "roadAngle": 0.5,
+            "wheelAngle": 3.141592653589793
+          },
+          {
+            "roadAngle": -0.5,
+            "wheelAngle": -3.141592653589793
+          },
+          {
+            "roadAngle": 0,
+            "wheelAngle": 0
+          }
+        ],
+        "limitations": "rigid gripping pose; sampled steering, not continuous anatomy or finger animation"
+      }
+    },
+    {
+      "view": "day-center",
+      "url": "http://127.0.0.1:8768/src/play.html?track=monza&team=ferrari&pose=steer&s=0&cam=2&d=0&line=off&quality=2&check=driver",
+      "result": {
+        "status": "PASS",
+        "hands": 2,
+        "triangles": 63924,
+        "quality": 2,
+        "samples": [
+          {
+            "roadAngle": 0,
+            "wheelAngle": 0
+          },
+          {
+            "roadAngle": 0.08,
+            "wheelAngle": 0.7853981633974483
+          },
+          {
+            "roadAngle": -0.08,
+            "wheelAngle": -0.7853981633974483
+          },
+          {
+            "roadAngle": 0.16,
+            "wheelAngle": 1.5707963267948966
+          },
+          {
+            "roadAngle": -0.16,
+            "wheelAngle": -1.5707963267948966
+          },
+          {
+            "roadAngle": 0.24,
+            "wheelAngle": 2.356194490192345
+          },
+          {
+            "roadAngle": -0.24,
+            "wheelAngle": -2.356194490192345
+          },
+          {
+            "roadAngle": 0.32,
+            "wheelAngle": 3.141592653589793
+          },
+          {
+            "roadAngle": -0.32,
+            "wheelAngle": -3.141592653589793
+          },
+          {
+            "roadAngle": 0.5,
+            "wheelAngle": 3.141592653589793
+          },
+          {
+            "roadAngle": -0.5,
+            "wheelAngle": -3.141592653589793
+          },
+          {
+            "roadAngle": 0,
+            "wheelAngle": 0
+          }
+        ],
+        "limitations": "rigid gripping pose; sampled steering, not continuous anatomy or finger animation"
+      }
+    }
+  ],
+  "newWarningsOrErrors": [],
+  "limitations": "Posed desktop Chrome/ANGLE checks, not a sustained performance or anatomy benchmark",
+  "engine_sha256": "1df2868c10dce2fab387f20bd30e6683e488b63015ce906bec0db5c1b14063c0"
+}

@@ -1,0 +1,64 @@
+{
+  "status": "exported and reimported; game fit requires rendered checks",
+  "source_sha256": "06c8eaed2cac7e88b981bc966eebcbeabcbbb12d5e62cfa3c31ce09d0256e326",
+  "sha256": "f4f8226dfd253028050f20421f582883a39791c87d8b54ac6f2d984aff8e1977",
+  "bytes": 2215220,
+  "triangles": 31019,
+  "bounds_blender": [
+    [
+      -0.08813108503818512,
+      -0.15389026701450348,
+      -0.10663412511348724
+    ],
+    [
+      0.055378660559654236,
+      0.07517129182815552,
+      0.10614824295043945
+    ]
+  ],
+  "uv_layers": 1,
+  "game_wrist_positions": [
+    [
+      -0.007,
+      -0.045,
+      -0.255
+    ],
+    [
+      -0.007,
+      -0.045,
+      0.255
+    ]
+  ],
+  "contact_fit": {
+    "adjusted_vertices": 2952,
+    "max_adjustment_m": 0.018411369892248102,
+    "cloth_clearance_m": 0.0015
+  },
+  "right_hand": "mirrored local Z; shared static grip geometry",
+  "posed_bone_tails_blender": {
+    "middle_0": [
+      0.003674375591799617,
+      0.013865773566067219,
+      0.14733542501926422
+    ],
+    "middle_1": [
+      0.003674374893307686,
+      0.03652960807085037,
+      0.1380404233932495
+    ],
+    "middle_2": [
+      0.0036743744276463985,
+      0.04519538953900337,
+      0.11512862145900726
+    ],
+    "thumb_2": [
+      0.043730296194553375,
+      0.023300714790821075,
+      0.13559433817863464
+    ]
+  },
+  "limitations": [
+    "source glove is inferred empty replica geometry",
+    "posed grip, not finger animation or hand-over-hand steering"
+  ]
+}
